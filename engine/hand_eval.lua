@@ -440,6 +440,42 @@ local function apply(st, c, m, eff, kind, val)
   return c, m
 end
 
+-- (EngineSim BR) The per-state scoring flags (Plasma balancing, Observatory multipliers by hand). Worked out ONCE per
+-- enumeration and carried on `mods` (each_subset / score / best_play_target build `mods` for one state), so the
+-- per-subset scoring loop pays a field read, not a scan of the vouchers and the consumable tray.
+local NO_OBS = {}
+local function gs_flags(gs)
+  local f = { balanced = HandEval.balanced(gs), obs = NO_OBS }
+  if HandEval.has_observatory(gs) then
+    local obs = {}
+    for _, c in ipairs(gs.consumables or {}) do
+      local h = c.set == "Planet" and not c.debuffed and HandEval.PLANET_HAND[c.key]
+      if h then obs[h] = (obs[h] or 1) * HandEval.OBSERVATORY_X end
+    end
+    f.obs = obs
+  end
+  return f
+end
+HandEval._gs_flags = gs_flags
+
+-- (EngineSim BR, speed) The effective jokers that HAVE each per-card hook, in board order, built once per enumeration
+-- and carried on `mods`: the scoring loop used to test every joker for every hook for every card of every subset.
+-- Same calls in the same order -- only the jokers without the hook are no longer visited.
+local function hook_lists(effective)
+  local h = { retrig = {}, card = {}, held_retrig = {}, held = {} }
+  for _, e in ipairs(effective) do
+    local impl = e.impl
+    if impl then
+      if impl.on_retrigger then h.retrig[#h.retrig + 1] = e end
+      if impl.on_card_scored then h.card[#h.card + 1] = e end
+      if impl.on_held_retrigger then h.held_retrig[#h.held_retrig + 1] = e end
+      if impl.on_held then h.held[#h.held + 1] = e end
+    end
+  end
+  return h
+end
+HandEval._hook_lists = hook_lists
+
 -- score(gs, played) -> HandEvaluation
 -- Resolves the effective jokers (copy expansion) + hand-modifier flags, then
 -- delegates to score_with. Both depend only on gs.jokers (NOT on `played`), so
@@ -449,6 +485,7 @@ end
 function HandEval.score(gs, played)
   local effective = HandEval.effective_jokers(gs)
   local mods = joker_mods(effective)
+  mods.gsf = gs_flags(gs)
   return HandEval.score_with(gs, played, effective, mods)
 end
 
@@ -485,27 +522,6 @@ function HandEval.observatory_xmult(gs, ht)
   return x
 end
 
--- (EngineSim BR) The per-state scoring flags (Plasma balancing, Observatory multipliers by hand), worked out ONCE per
--- game-state table: score_with runs for every subset of every sampled hand, so it must not re-scan the vouchers and
--- the consumable tray each time. Weak keys: an entry dies with its state.
-local FLAG_CACHE = setmetatable({}, { __mode = "k" })
-local NO_OBS = {}
-local function gs_flags(gs)
-  local f = FLAG_CACHE[gs]
-  if f then return f end
-  f = { balanced = HandEval.balanced(gs), obs = NO_OBS }
-  if HandEval.has_observatory(gs) then
-    local obs = {}
-    for _, c in ipairs(gs.consumables or {}) do
-      local h = c.set == "Planet" and not c.debuffed and HandEval.PLANET_HAND[c.key]
-      if h then obs[h] = (obs[h] or 1) * HandEval.OBSERVATORY_X end
-    end
-    f.obs = obs
-  end
-  FLAG_CACHE[gs] = f
-  return f
-end
-HandEval._gs_flags = gs_flags
 
 -- Score `played` with PRECOMPUTED effective jokers + mods (see HandEval.score).
 function HandEval.score_with(gs, played, effective, mods, pre_ht, pre_scoring, pre_contains)
@@ -651,7 +667,7 @@ function HandEval.score_with(gs, played, effective, mods, pre_ht, pre_scoring, p
   --    when its own hand is scored. Consumables score right after the jokers in the same pass (game:
   --    G.FUNCS.evaluate_play iterates jokers then consumeables; Card:calculate_joker, set "Planet"). Unmodelled
   --    before, so holding Saturn for your Straight looked worthless.
-  local fl = gs_flags(gs)
+  local fl = mods.gsf or gs_flags(gs)
   local obs = fl.obs[ht]
   if obs and obs > 1 then chips, mult = apply(st, chips, mult, { xmult = obs }, "observatory:", ht) end
 
@@ -867,6 +883,7 @@ local function each_subset(gs, cards, f, filter, prune)
   -- of the per-subset path -- this is the Monte-Carlo simulation's hottest loop).
   local effective = HandEval.effective_jokers(gs)
   local mods = joker_mods(effective)
+  mods.gsf = gs_flags(gs)
   if YIELD then YIELD() end   -- cooperative slice boundary (no-op unless driven)
   if prune and ((filter and not HandEval.TYPE_ONLY[filter]) or not HandEval.kicker_neutral(effective)) then prune = false end
   -- Depth-first pre-order over index sets ({1}, {1,2}, ..., {1,2,3,4,5}, {1,2,3,4,6}, ...), the exact order the old
@@ -1052,7 +1069,7 @@ function HandEval.best_play_target(gs, cards, remaining, filter, cheap)
   -- them at their best card order. Off when insensitive -> byte-identical to the old dealt-order chooser.
   local sensitive = (not cheap) and HandEval.card_order_sensitive(gs)
   local effective, mods
-  if sensitive then effective = HandEval.effective_jokers(gs); mods = joker_mods(effective) end
+  if sensitive then effective = HandEval.effective_jokers(gs); mods = joker_mods(effective); mods.gsf = gs_flags(gs) end
   local best, best_sel, bt, be, bs, bmin, bsk
   local cands = sensitive and {} or nil
   local cand_by_key = {}
