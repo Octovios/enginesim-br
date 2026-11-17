@@ -11,6 +11,7 @@
 
 local Mechanics = require("engine.mechanics")
 local Cards = require("util.cards")
+local I18N = require("util.i18n")   -- (EngineSim BR) translatable advice text
 
 local BE = {}
 
@@ -86,26 +87,26 @@ function BE.shop_advice(eff)
   if not eff or not eff.key then return nil end
   local hint, ws, we = nil, 1.0, 1.0
   if eff.halve_base then
-    hint = eff.name .. " next: halves base chips & mult — favour x/+mult (base-independent) over leveling"
+    hint = I18N.f("%s next: halves base chips & mult — favour x/+mult (base-independent) over leveling", eff.name)
     ws = 1.4
   elseif eff.mult and eff.mult >= 4 then
-    hint = string.format("%s next: %dx requirement — you need much more scoring", eff.name, eff.mult)
+    hint = I18N.f("%s next: %dx requirement — you need much more scoring", eff.name, eff.mult)
     ws = 1.4
   elseif eff.debuff_suit then
-    hint = eff.name .. " next: " .. eff.debuff_suit .. " score nothing — don't lean on " .. eff.debuff_suit
+    hint = I18N.f("%s next: %s score nothing — don't lean on %s", eff.name, eff.debuff_suit, eff.debuff_suit)
     ws = 1.2
   elseif eff.debuff_faces then
-    hint = eff.name .. " next: face cards score nothing — avoid face-card scoring"
+    hint = I18N.f("%s next: face cards score nothing — avoid face-card scoring", eff.name)
     ws = 1.2
   elseif eff.no_discards then
-    hint = eff.name .. " next: no discards — value made hands over draws"
+    hint = I18N.f("%s next: no discards — value made hands over draws", eff.name)
   elseif eff.min_play then
-    hint = eff.name .. " next: must play 5 cards"
+    hint = I18N.f("%s next: must play 5 cards", eff.name)
   elseif eff.one_hand then
-    hint = eff.name .. " next: only one hand — one big hand must clear it"
+    hint = I18N.f("%s next: only one hand — one big hand must clear it", eff.name)
     ws = 1.3
   elseif eff.name then
-    hint = eff.name .. " next"
+    hint = I18N.f("%s next", eff.name)
   end
   return { hint = hint, w_score_mult = ws, w_econ_mult = we }
 end

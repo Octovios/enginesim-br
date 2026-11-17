@@ -127,6 +127,7 @@ function Overlay.describe(a)
   local what = (a.cards and #a.cards > 0) and cards_str(a.cards)
     or (a.target and (a.target.name or a.target.key)) or ""
   local s = (what ~= "") and (verb .. " " .. what) or verb
+  if a.target_note and a.target_note ~= "" then s = s .. " — " .. a.target_note end
   if a.hand_type and (a.type == "PLAY") then s = s .. " [" .. I18N.hand(a.hand_type) .. "]" end
   if a.type == "PLAY" and a.score then s = s .. " (~" .. Overlay.fmt_num(a.score) .. ")" end
   if BUYS[a.type] and a.cost and a.cost > 0 then s = s .. " ($" .. a.cost .. ")" end

@@ -16,6 +16,7 @@ local Flags = require("engine.flags")
 local Cards = require("util.cards")
 local GS = require("model.game_state")
 local HandEval = require("engine.hand_eval")
+local I18N = require("util.i18n")   -- (EngineSim BR) translatable advice text
 
 local H = {}
 
@@ -270,7 +271,7 @@ function H.best_discard(gs)
     candidates[#candidates + 1] = {
       cards = discard, keep = fd.keep, target = "flush",
       weight = H.WEIGHT.flush4, value = val,
-      reason = string.format("Keep 4 to a %s flush; discard %d to complete it.", fd.suit:lower(), #discard),
+      reason = I18N.f("Keep 4 to a %s flush; discard %d to complete it.", fd.suit:lower(), #discard),
     }
   end
 
@@ -282,7 +283,7 @@ function H.best_discard(gs)
     candidates[#candidates + 1] = {
       cards = discard, keep = sd.keep, target = "straight",
       weight = w, value = val,
-      reason = string.format("Keep 4 to a %s straight; discard %d to complete it.",
+      reason = I18N.f("Keep 4 to a %s straight; discard %d to complete it.",
         sd.open and "open" or "gutshot", #discard),
     }
   end
@@ -298,7 +299,7 @@ function H.best_discard(gs)
       cards = discard, keep = sb.keep, target = sb.kind,
       weight = (sb.kind == "trips") and H.WEIGHT.trips_build or H.WEIGHT.pair_build,
       value = val,
-      reason = string.format("Keep the %s; discard %d to improve it.", sb.kind, #discard),
+      reason = I18N.f("Keep the %s; discard %d to improve it.", sb.kind, #discard),
     }
   end
 
@@ -312,7 +313,7 @@ function H.best_discard(gs)
       candidates[#candidates + 1] = {
         cards = mc, keep = complement(hand, mc), target = "economy",
         weight = 1, value = 0,
-        reason = string.format("Discard %d card(s) for money (%s).", #mc, note),
+        reason = I18N.f("Discard %d card(s) for money (%s).", #mc, note),
       }
     end
   end

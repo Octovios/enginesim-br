@@ -22,6 +22,7 @@ local JokerValue = require("engine.joker_value")
 local VU = require("engine.value_units")
 local DeckPlan = require("engine.deck_plan")
 local BuildPlan = require("engine.build_plan")
+local I18N = require("util.i18n")   -- (EngineSim BR) translatable advice text
 
 local P = {}
 
@@ -436,16 +437,16 @@ function P.value(gs, pk, opts)
   if kind == "planet" then
     pool = planet_pool(gs, opts)
     local bp = ConsumableValue.best_planet(gs, opts)
-    note = bp and string.format("planets (see %d, pick %d); best: level %s", n, k, bp.hand)
-      or string.format("planets (see %d, pick %d)", n, k)
+    note = bp and I18N.f("planets (see %d, pick %d); best: level %s", n, k, bp.hand)
+      or I18N.f("planets (see %d, pick %d)", n, k)
   elseif kind == "joker" then
-    pool = joker_pool(gs, opts); note = string.format("jokers (see %d, pick %d)", n, k)
+    pool = joker_pool(gs, opts); note = I18N.f("jokers (see %d, pick %d)", n, k)
   elseif kind == "tarot" then
-    pool = tarot_pool(gs, opts); note = string.format("tarots (see %d, pick %d)", n, k)
+    pool = tarot_pool(gs, opts); note = I18N.f("tarots (see %d, pick %d)", n, k)
   elseif kind == "spectral" then
-    pool = spectral_pool(gs, opts); note = string.format("spectral (see %d, pick %d)", n, k)
+    pool = spectral_pool(gs, opts); note = I18N.f("spectral (see %d, pick %d)", n, k)
   else
-    pool = card_pool(gs); note = string.format("cards (see %d, pick %d)", n, k)
+    pool = card_pool(gs); note = I18N.f("cards (see %d, pick %d)", n, k)
   end
   return P.expected_pick(pool, n, k, opts.rng), note
 end

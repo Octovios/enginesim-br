@@ -11,6 +11,7 @@
 
 local Cards = require("util.cards")
 local JokerData = require("engine.joker_data")
+local I18N = require("util.i18n")   -- (EngineSim BR) translatable advice text
 
 local G = {}
 
@@ -116,16 +117,18 @@ local PLAY_FARM_ECON = { j_faceless = 4, j_mail = 3, j_trading = 3 }
 -- realizes -- condition-locked scalers grow, per-play econ jokers pay. The skip decision priced only (1)
 -- before, so a scaler/farm board over-skipped (owner: "skipping quite a lot"). Bounded so a big board
 -- can't make a skip impossible: a genuinely strong tag still clears the skip margin.
-function G.blind_select_value(gs)
+-- opts.measured_growth (EngineSim BR): the caller prices the scaling jokers' growth itself (engine/scaling_growth),
+-- so the flat per-scaler credit below is left out instead of counted twice.
+function G.blind_select_value(gs, opts)
   local v, notes = 0, {}
   local function add(d, n) v = v + d; notes[#notes + 1] = n end
 
   -- both slot gates now go through G.has_output_room (exactly equivalent to the inline
   -- `cons < cons_slots` / `joker_slots - njok > 0` they replace), so the shop-side gate added
   -- for R8 and this one can never disagree about whether a generator can produce.
-  if owns(gs, "j_cartomancer") and G.has_output_room(gs, "j_cartomancer", true) then add(4, "Cartomancer makes a Tarot") end
-  if owns(gs, "j_riff_raff") and G.has_output_room(gs, "j_riff_raff", true) then add(8, "Riff-Raff makes 2 Jokers") end
-  if owns(gs, "j_marble") then add(2, "Marble adds a Stone card") end
+  if owns(gs, "j_cartomancer") and G.has_output_room(gs, "j_cartomancer", true) then add(4, I18N.t("Cartomancer makes a Tarot")) end
+  if owns(gs, "j_riff_raff") and G.has_output_room(gs, "j_riff_raff", true) then add(8, I18N.t("Riff-Raff makes 2 Jokers")) end
+  if owns(gs, "j_marble") then add(2, I18N.t("Marble adds a Stone card")) end
 
   -- (2) in-blind value forgone by skipping
   local nsc = 0
@@ -136,9 +139,9 @@ function G.blind_select_value(gs)
       e = math.floor(require("engine.joker_income").econ_value(gs, j.key) + 0.5)
       if e <= 0 then e = nil end
     end
-    if e then add(e, (j.name or j.key) .. " farms ~$" .. e .. "/blind") end
+    if e then add(e, I18N.f("%s farms ~$%d/blind", j.name or j.key, e)) end
   end
-  if nsc > 0 then add(math.min(6, 2 * nsc), nsc .. " scaler" .. (nsc == 1 and "" or "s") .. " grow by playing") end
+  if nsc > 0 and not (opts and opts.measured_growth) then add(math.min(6, 2 * nsc), I18N.f("%d scaler(s) grow by playing", nsc)) end
   return v, table.concat(notes, ", ")
 end
 
@@ -160,7 +163,7 @@ function G.play_bonus(gs, played, hand_type)
   if owns(gs, "j_midas_mask") then
     local faces = 0
     for _, c in ipairs(played) do if Cards.is_face(c) then faces = faces + 1 end end
-    if faces > 0 then add(faces * 12, string.format("Midas golds %d face(s)", faces)) end
+    if faces > 0 then add(faces * 12, I18N.f("Midas golds %d face(s)", faces)) end
   end
   return bonus, table.concat(notes, ", ")
 end

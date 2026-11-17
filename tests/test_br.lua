@@ -184,6 +184,15 @@ return function(t)
     t.ok(BA.entry(ch, "flush_any").f > BA.entry(GS.new{ deck = full_deck(), run = { hand_levels = {} } }, "flush_any").f,
       "builds: a two-suit deck favours flushes")
 
+    -- the panel names what the deck favours before any build has started (never on a standard deck)
+    local fav = table.concat(BA.summary_lines(ch), "\n")
+    t.ok(fav:find("your deck favours", 1, true) ~= nil and fav:find("Hearts Flush", 1, true) ~= nil,
+      "builds: a Checkered Deck is said to favour the Hearts flush")
+    t.ok(not table.concat(BA.summary_lines(GS.new{ deck = full_deck(), run = { hand_levels = {} } }), "\n"):find("favours", 1, true),
+      "builds: a standard deck favours nothing in particular")
+    t.ok(table.concat(BA.summary_lines(ch), "\n"):find("no build started", 1, true) ~= nil,
+      "builds: with no pieces, the panel says no build has started")
+
     -- owned + offered + seen pieces raise a build's readiness
     local deck = full_deck()
     local base = BA.entry(GS.new{ deck = deck, run = { hand_levels = {} } }, "fullhouse")

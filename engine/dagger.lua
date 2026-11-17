@@ -16,6 +16,7 @@ local Eval       = require("engine.eval_function")
 local JokerWorth = require("engine.joker_worth")
 local VU         = require("engine.value_units")
 local Mechanics  = require("engine.mechanics")
+local I18N = require("util.i18n")   -- (EngineSim BR) translatable advice text
 
 local Dagger = {}
 Dagger.FEED_MARGIN = 1.2   -- feed only when the Mult it gains beats what is lost by 20% (a 6-sample read is noisy)
@@ -63,16 +64,15 @@ function Dagger.plan(gs, opts)
     order[#order + 1] = dagger
     order[#order + 1] = food
     return { order = order, feed = food,
-      reason = string.format("Feed Ceremonial Dagger: put %s right of it (+%d Mult, worth more than %s).",
+      reason = I18N.f("Feed Ceremonial Dagger: put %s right of it (+%d Mult, worth more than %s).",
         food.name or food.key, 2 * (food.sell_value or 1), food.name or food.key) }
   end
   if di == #jokers then return nil end          -- already safe
   for i, j in ipairs(jokers) do if i ~= di then order[#order + 1] = j end end
   order[#order + 1] = dagger
   return { order = order, feed = nil,
-    reason = "Move Ceremonial Dagger to the far right: it would destroy " ..
-      ((jokers[di + 1] and (jokers[di + 1].name or jokers[di + 1].key)) or "the joker to its right") ..
-      ", which is worth more than the Mult it would gain." }
+    reason = I18N.f("Move Ceremonial Dagger to the far right: it would destroy %s, which is worth more than the Mult it would gain.",
+      (jokers[di + 1] and (jokers[di + 1].name or jokers[di + 1].key)) or I18N.t("the joker to its right")) }
 end
 
 return Dagger

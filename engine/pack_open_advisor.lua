@@ -21,6 +21,7 @@ local Progress = require("util.progress")   -- the live Thinking bar (inert unle
 local BuildPlan = require("engine.build_plan")
 local Generators = require("engine.generators")
 local JokerWorth = require("engine.joker_worth")
+local I18N = require("util.i18n")   -- (EngineSim BR) translatable advice text
 
 local PO = {}
 
@@ -424,18 +425,18 @@ local function full_board_pick(gs, valued, mopts, ordered, reason)
       for i, pk in ipairs(ordered) do if pk.it.set == "Joker" then ji = i; break end end
       if ji and ordered[ji] ~= jpick then
         ordered[ji] = jpick
-        if ji == 1 then reason = string.format("Take %s (clears the swap bar)", jpick.name) end
+        if ji == 1 then reason = I18N.f("Take %s (clears the swap bar)", jpick.name) end
       elseif not ji then
         table.insert(ordered, 1, jpick)
-        reason = string.format("Take %s (clears the swap bar)", jpick.name)
+        reason = I18N.f("Take %s (clears the swap bar)", jpick.name)
       end
-      reason = reason .. string.format(" — Joker slots full: sell %s (%s) to make room for %s.",
-        wname, trade.paired and "measured upgrade" or (trade.weakest and "your weakest" or "it leans on your weakest"),
+      reason = reason .. I18N.f(" — Joker slots full: sell %s (%s) to make room for %s.",
+        wname, trade.paired and I18N.t("measured upgrade") or (trade.weakest and I18N.t("your weakest") or I18N.t("it leans on your weakest")),
         jpick.name)
     elseif ordered[1] and ordered[1].it.set == "Joker" then
       -- The recommended pick is a joker but the board is full and no swap is worth it (jpick doesn't beat
       -- the weakest, or every owned joker is a protected keeper). Demote to the best FITTING pick, else SKIP.
-      local wtxt = wname and (" (" .. wname .. ")") or " (your board is all keepers)"
+      local wtxt = wname and (" (" .. wname .. ")") or I18N.t(" (your board is all keepers)")
       local fit
       for _, pk in ipairs(ordered) do
         if pk.it.set ~= "Joker" and pk.v and pk.v > 0 then fit = pk; break end
@@ -443,11 +444,11 @@ local function full_board_pick(gs, valued, mopts, ordered, reason)
       if fit then
         for i, pk in ipairs(ordered) do if pk == fit then table.remove(ordered, i); break end end
         table.insert(ordered, 1, fit)
-        reason = string.format("Take %s — Joker slots full and %s doesn't beat your weakest%s, so keep your board.",
+        reason = I18N.f("Take %s — Joker slots full and %s doesn't beat your weakest%s, so keep your board.",
           fit.name, (jpick and jpick.name) or "the joker", wtxt)
       else
         skip_full = true
-        reason = string.format("Skip — Joker slots full and %s doesn't beat your weakest%s; keep your board.",
+        reason = I18N.f("Skip — Joker slots full and %s doesn't beat your weakest%s; keep your board.",
           (jpick and jpick.name) or "the pack joker", wtxt)
       end
     end
@@ -555,7 +556,7 @@ function PO.recommend(gs, opts)
 
   if #picks == 0 then
     return { ranked = valued, picks = {}, skip = true,
-             reason = "Skip this pack — nothing improves your deck (bloat)." }
+             reason = I18N.t("Skip this pack — nothing improves your deck (bloat).") }
   end
 
   local fool, others = order_with_fool(gs, picks, cheap, rng, need, gen_factor)
@@ -565,9 +566,9 @@ function PO.recommend(gs, opts)
   for _, pk in ipairs(ordered) do names[#names + 1] = pk.name end
   local reason
   if #ordered == 1 then
-    reason = "Take " .. names[1] .. (ordered[1].meas and " (measured best)" or "")
+    reason = I18N.f("Take %s", names[1]) .. (ordered[1].meas and I18N.t(" (measured best)") or "")
   else
-    reason = "Take " .. table.concat(names, ", then ") .. " (in that order)"
+    reason = I18N.f("Take %s (in that order)", table.concat(names, I18N.t(", then ")))
   end
   -- name which card(s) to apply each targeting tarot to (Magician/Devil/suit/...)
   local tnotes = {}
@@ -578,11 +579,11 @@ function PO.recommend(gs, opts)
   if #tnotes > 0 then reason = reason .. " — " .. table.concat(tnotes, "; ") end
   if fool and fool.copies then
     if fool.copy_mode == "prev" then
-      reason = reason .. " — Fool first, copies your last-used " .. fool.copies .. "."
+      reason = reason .. I18N.f(" — Fool first, copies your last-used %s.", fool.copies)
     elseif fool.copy_mode == "held" then
-      reason = reason .. " — Fool copies your held " .. fool.copies .. " (use it first)."
+      reason = reason .. I18N.f(" — Fool copies your held %s (use it first).", fool.copies)
     else
-      reason = reason .. " — Fool copies " .. fool.copies .. "."
+      reason = reason .. I18N.f(" — Fool copies %s.", fool.copies)
     end
   end
 
@@ -596,16 +597,16 @@ function PO.recommend(gs, opts)
       local deficit = meta.n - free_cslots
       local held_names = {}
       for _, h in ipairs(held_cons) do held_names[#held_names + 1] = h.name or h.key end
-      local who = (#held_names > 0) and (" (e.g. " .. held_names[1] .. ")") or ""
-      reason = reason .. string.format(
+      local who = (#held_names > 0) and I18N.f(" (e.g. %s)", held_names[1]) or ""
+      reason = reason .. I18N.f(
         " — %s creates %d card%s but you have %d free consumable slot%s: use %d held card%s%s first or the rest are lost.",
         pk.name, meta.n, meta.n == 1 and "" or "s", free_cslots, free_cslots == 1 and "" or "s",
         deficit, deficit == 1 and "" or "s", who)
     elseif meta and meta.out == "joker" and free_jslots < meta.n then
       local _, wname = weakest_owned_joker(gs, mopts)
-      reason = reason .. string.format(
+      reason = reason .. I18N.f(
         " — %s creates a Joker but your Joker slots are full: sell %s first, or it's lost.",
-        pk.name, wname or "your weakest joker")
+        pk.name, wname or I18N.t("your weakest joker"))
     end
   end
 
@@ -633,8 +634,8 @@ function PO.recommend(gs, opts)
       local skip_credit = math.min(0.15, 0.05 * amp)   -- per-skip frac for +3 permanent mult (heuristic)
       if (ordered[1].v or 0) <= skip_credit then
         skip_full = true
-        reason = string.format("Skip to feed Red Card (+3 Mult, permanent) — the best pick (%s) is worth less.",
-          ordered[1].name or "this card")
+        reason = I18N.f("Skip to feed Red Card (+3 Mult, permanent) — the best pick (%s) is worth less.",
+          ordered[1].name or I18N.t("this card"))
       end
     end
   end

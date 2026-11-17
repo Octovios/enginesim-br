@@ -121,7 +121,14 @@ function SK.recommend(gs, opts)
   local joker_econ = Income.econ_power(gs) or 0
   -- jokers that fire when you SELECT the blind (Cartomancer/Riff-Raff/Marble)
   -- are free value you forgo by skipping -> credit them to PLAYING.
-  local gen_v, gen_note = Generators.blind_select_value(gs)
+  -- JOKER GROWTH (EngineSim BR): what one more blind played / skipped does to the jokers you own. Measured first, so
+  -- the flat per-scaler credit of blind_select_value is not counted on top of it.
+  local growth = { play_dollars = 0, skip_dollars = 0, play_items = {}, skip_items = {} }
+  if opts.growth ~= false then
+    local okg, g = pcall(ScalingGrowth.play_vs_skip, gs, { seed = state_seed(gs) + 101 })
+    if okg and type(g) == "table" then growth = g end
+  end
+  local gen_v, gen_note = Generators.blind_select_value(gs, { measured_growth = growth.measured })
   -- the forgone-shop value scales up as the board empties (don't skip your first joker)
   local njokers = #(gs.jokers or {})
   local slots = (gs.run and gs.run.joker_slots) or 5
@@ -147,13 +154,6 @@ function SK.recommend(gs, opts)
   -- INTEREST is paid only at a cash-out, which a skipped blind does not have (0 on the Green Deck)
   local e = gs.economy or {}
   local interest = RunContext.interest(gs, e.dollars or 0)
-
-  -- JOKER GROWTH (EngineSim BR): what one more blind played / skipped does to the jokers you own
-  local growth = { play_dollars = 0, skip_dollars = 0, play_items = {}, skip_items = {} }
-  if opts.growth ~= false then
-    local okg, g = pcall(ScalingGrowth.play_vs_skip, gs, { seed = state_seed(gs) + 101 })
-    if okg and type(g) == "table" then growth = g end
-  end
 
   local play_value = reward + shop_value + hand_money + discard_money + gen_v + joker_econ + interest
     + (growth.play_dollars or 0)

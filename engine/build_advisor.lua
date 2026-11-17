@@ -270,10 +270,22 @@ function BA.summary_lines(gs)
   local n = 0
   for _, e in ipairs(list) do
     if n >= BA.SUGGEST_N then break end
-    if e.f >= BA.VIABLE_MIN then
+    -- only builds that have STARTED (a piece owned, on offer or seen, or levels / plays invested): ranking untouched
+    -- builds against each other is noise
+    if e.f >= BA.VIABLE_MIN and e.ready > 0.005 then
       n = n + 1
-      lines[#lines + 1] = "  " .. I18N.say("build_line", n, A.name(e.arch, L), pct(e.viability), pieces_text(e))
+      lines[#lines + 1] = "  " .. I18N.say("build_line", n, A.name(e.arch, L), pct(e.ready), pieces_text(e))
     end
+  end
+  if n == 0 then
+    lines[#lines + 1] = "  " .. I18N.say("build_none_started")
+    -- what the deck itself favours (a Checkered Deck's two flushes, a deck concentrated in one rank...)
+    local fav, prof = {}, RC.deck_profile(gs)
+    for _, e in ipairs(list) do
+      if #fav >= 2 then break end
+      if e.f >= BA.VIABLE_MIN and e.arch.favoured and e.arch.favoured(prof) then fav[#fav + 1] = A.name(e.arch, L) end
+    end
+    if #fav > 0 then lines[#lines + 1] = "  " .. I18N.say("build_deck_favours", table.concat(fav, ", ")) end
   end
   -- a build you hold pieces of but the deck can't make (Baron on an Abandoned Deck)
   for _, e in ipairs(list) do

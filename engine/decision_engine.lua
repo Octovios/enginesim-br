@@ -30,6 +30,7 @@ local DeckPlan = require("engine.deck_plan")
 local Cards = require("util.cards")
 local BossEffect = require("engine.boss_effect")
 local RunContext = require("engine.run_context")   -- (EngineSim BR) Green Deck: $2 per unused hand
+local I18N = require("util.i18n")   -- (EngineSim BR) translatable advice text
 
 local DE = {}
 
@@ -107,7 +108,7 @@ local function force_into_discard(gs, a)
   for i, c in ipairs(a.cards) do cards[i] = c end
   if #cards >= 5 then cards[#cards] = fc else cards[#cards + 1] = fc end
   a.cards = cards
-  a.reason = (a.reason or "") .. "  [Cerulean Bell: the forced card goes too.]"
+  a.reason = (a.reason or "") .. I18N.t("  [Cerulean Bell: the forced card goes too.]")
   return a
 end
 DE._force_into_discard = force_into_discard
@@ -325,10 +326,10 @@ local function planet_use(gs, base_ev, remaining, held, gs2)
   -- honest reason: name the hand THIS planet levels; only mention the play when this planet boosts it.
   local reason
   if best_boost > 0 and best_ht then
-    reason = string.format("Use %s to level %s (free, permanent) — strengthens your %s this turn.",
+    reason = I18N.f("Use %s to level %s (free, permanent) — strengthens your %s this turn.",
       best_p.name, best_p.hand or "", best_ht)
   else
-    reason = string.format("Use %s to level %s (free, permanent).", best_p.name, best_p.hand or "")
+    reason = I18N.f("Use %s to level %s (free, permanent).", best_p.name, best_p.hand or "")
   end
   return {
     -- use_keys/target.key: the machine-readable center key the actuator uses (target.name is display-only)
@@ -389,7 +390,7 @@ local function generator_use(gs)
       local name = c.name or c.key
       best = { type = "USE_CONSUMABLE", target = { name = name, key = c.key }, use_names = { c.key }, use_keys = { c.key },
         kind = "generate", value = hv, score = hv,
-        reason = string.format("Use %s — %s; holding it gains nothing.", name, hnote) }
+        reason = I18N.f("Use %s — %s; holding it gains nothing.", name, hnote) }
     end
     if spec then
       local ok = (spec.needs == nil)
@@ -410,7 +411,7 @@ local function generator_use(gs)
           local name = c.name or c.key
           best = { type = "USE_CONSUMABLE", target = { name = name, key = c.key }, use_names = { c.key }, use_keys = { c.key },
             kind = "generate", value = val, score = val,
-            reason = string.format("Use %s — free value from a held consumable.", name) }
+            reason = I18N.f("Use %s — free value from a held consumable.", name) }
         end
       end
     end
@@ -499,7 +500,7 @@ local function burnt_discard(gs, hand, play_cards, hands_left, remaining)
   local ht = names[1]
   if not ht then return nil end
   return { type = "DISCARD", cards = best[ht].cards, burnt = true, burnt_hand = ht,
-    reason = string.format("Discard your %s first — Burnt Joker levels it (+1 %s level, free); the clear stays in hand.",
+    reason = I18N.f("Discard your %s first — Burnt Joker levels it (+1 %s level, free); the clear stays in hand.",
       ht, ht) }
 end
 DE._burnt_discard = burnt_discard   -- exposed for tests
@@ -561,7 +562,7 @@ local function trading_card_discard(gs, play_ev, rng, dig_value)
   return {
     type = "DISCARD", cards = { worst }, target = "trade", trade = true,
     value = value, score = value, econ = 3,
-    reason = string.format("Discard %s (your weakest) — Trading Card destroys it (+$3) and thins your deck.",
+    reason = I18N.f("Discard %s (your weakest) — Trading Card destroys it (+$3) and thins your deck.",
       Cards.label(worst)),
   }
 end
@@ -706,12 +707,12 @@ local function surplus_dig(P)
         surplus_dig = true, farms_money = money > 0, banked_money = money,
         money_dig = (mode == "farm" or mode == "search"),
         reason = (mode == "farm") and (money > 0
-            and string.format("Discard %d to farm $%d (%s) — the clear is locked, the cards return to your deck.",
-                  #pitch, money, note or "econ joker")
-            or string.format("Discard %d to work your econ joker (%s) — the clear is locked.", #pitch, note or ""))
+            and I18N.f("Discard %d to farm $%d (%s) — the clear is locked, the cards return to your deck.",
+                  #pitch, money, note or I18N.t("econ joker"))
+            or I18N.f("Discard %d to work your econ joker (%s) — the clear is locked.", #pitch, note or ""))
           or (mode == "search") and
             "Dig toward Faceless: keep your face cards and pitch chaff to build a 3-face discard for $5 (clear is locked)."
-          or string.format(
+          or I18N.f(
             "Dig with a spare discard (%d) — the clear is already locked, so the extra score is wasted.", discards_left),
       }
     end
@@ -797,7 +798,7 @@ local function milk_play(P)
           play_econ = HandEval.play_econ(gs, mev, mcards),
           ordering = Ordering.optimize(gs, mcards, { objective = "money", remaining = remaining }),
           milk = true,
-          reason = string.format(
+          reason = I18N.f(
             "Milk the blind: play the %s to farm ~+$%.0f — the clear is locked for a later hand.",
             mev.hand_type, net_gain),
         }
@@ -845,7 +846,7 @@ local function discard_candidate(P)
       local mmoney = select(1, Heuristics.discard_econ(gs, md.cards)) or 0
       cands[#cands + 1] = { cards = md.cards, value = md.value + mmoney * Heuristics.DOLLAR_VALUE,
         measured = true, farms_money = mmoney > 0, banked_money = mmoney,
-        reason = string.format("Discard %d (keep your strong cards) to build a stronger hand (~%d expected)%s.",
+        reason = I18N.f("Discard %d (keep your strong cards) to build a stronger hand (~%d expected)%s.",
           #md.cards, math.floor(md.value), mmoney > 0 and string.format(" + $%d", mmoney) or "") }
       -- keep the heuristic ONLY for the money discard the score-based measure can't
       -- value (Faceless/Mail-In dump cards for $).
@@ -867,7 +868,7 @@ local function discard_candidate(P)
         if p.hand == th then
           discard_action.use_planet = p.name
           discard_action.reason = discard_action.reason
-            .. string.format(" (use %s first to level %s)", p.name, th)
+            .. I18N.f(" (use %s first to level %s)", p.name, th)
           break
         end
       end
@@ -898,7 +899,7 @@ local function discard_candidate(P)
       discard_action.value = discard_action.value - forfeit * Heuristics.DOLLAR_VALUE
       discard_action.forfeit = forfeit
       discard_action.reason = (discard_action.reason or "")
-        .. string.format(" (costs $%d of Delayed Gratification)", forfeit)
+        .. I18N.f(" (costs $%d of Delayed Gratification)", forfeit)
     end
   end
   return discard_action
@@ -990,7 +991,7 @@ local function arbitrate(P)
       end
       if eight then
         best = { type = "DISCARD", cards = { eight }, sixth_sense = true, value = (play_action.value or 0) + 2,
-          reason = "Discard the spare 8 alone first — Sixth Sense turns it into a Spectral card; the clear stays in hand." }
+          reason = I18N.t("Discard the spare 8 alone first — Sixth Sense turns it into a Spectral card; the clear stays in hand.") }
         sixth_done = true
       end
     end
@@ -1087,7 +1088,7 @@ local function arbitrate(P)
       local vd = Simulation.survive_after(gs, { kind = "DISCARD", cards = best.cards }, DE.SURV_SAMPLES, lcg(disc_seed(gs)))
       if mouth_lock.clear >= vd.clear and mouth_lock.clear > 0 then
         best = play_action; best.plan = true
-        best.lock_note = string.format("The Mouth: lock %s now (clears ~%d%%) -- digging first clears ~%d%% and spends a discard the lock needs.",
+        best.lock_note = I18N.f("The Mouth: lock %s now (clears ~%d%%) -- digging first clears ~%d%% and spends a discard the lock needs.",
           play_action.hand_type, math.floor(mouth_lock.clear * 100 + 0.5), math.floor(vd.clear * 100 + 0.5))
       end
     end
@@ -1115,7 +1116,7 @@ local function arbitrate(P)
           best = { type = "PLAY", cards = md.cards, dig_play = true, plan = true,
             hand_type = (dev and dev.hand_type) or "High Card",
             score = (dev and dev.score) or 0, value = play_action.value,
-            reason = string.format(
+            reason = I18N.f(
               "No discards left and this hand can't clear — play your chaff (%d) to cycle for a better hand, keeping your build cards.",
               #md.cards) }
         end
@@ -1158,8 +1159,8 @@ local function farm_choice(P, best, candidates)
     end
     if pick then
       local st = pick.st
-      local why = string.format("Farm your money joker%s: ~$%.0f more this blind, still clears ~%d%% (vs ~%d%%); keep %d hand%s to clear.",
-        (st.kind == "DISCARD") and string.format(" (discard for $%d)", st.money or 0) or " (play a non-clearing hand to cycle cards)",
+      local why = I18N.f("Farm your money joker%s: ~$%.0f more this blind, still clears ~%d%% (vs ~%d%%); keep %d hand%s to clear.",
+        (st.kind == "DISCARD") and I18N.f(" (discard for $%d)", st.money or 0) or " (play a non-clearing hand to cycle cards)",
         pick.net, math.floor(pick.vf.clear * 100 + 0.5), math.floor(pick.vn.clear * 100 + 0.5), pick.r, pick.r == 1 and "" or "s")
       candidates[#candidates + 1] = best
       if st.kind == "DISCARD" then
@@ -1182,7 +1183,7 @@ local function farm_choice(P, best, candidates)
           local o = Ordering.optimize(gs, st.sel, { objective = "money", remaining = 0 })
           if o and o.improves and (o.money_gain or 0) > 1e-9 then
             best.reorder = o
-            best.reason = best.reason .. string.format("  Reorder for +$%g on this hand.", o.money_gain)
+            best.reason = best.reason .. I18N.f("  Reorder for +$%g on this hand.", o.money_gain)
           end
         end
       end
@@ -1231,7 +1232,7 @@ local function decide_core(gs, opts)
     play_ev, play_cards = HandEval.best_play_target(gs, hand, remaining)
   end
   if not play_ev then
-    return { best = nil, alternatives = {}, reason = "No cards to play." }
+    return { best = nil, alternatives = {}, reason = I18N.t("No cards to play.") }
   end
   local clears = (not play_scores_zero) and play_ev.score >= remaining and remaining > 0
   local guaranteed = (not play_scores_zero) and (play_ev.score_min or play_ev.score) >= remaining and remaining > 0
@@ -1287,7 +1288,7 @@ local function decide_core(gs, opts)
         mouth_lock = greedy or top
         if top ~= greedy and (not greedy or top.clear > greedy.clear + DE.MOUTH_LOCK_MARGIN
                               or (top.clear == greedy.clear and top.frac > greedy.frac + DE.MOUTH_LOCK_MARGIN)) then
-          mouth_lock_note = string.format("The Mouth: lock %s (clears the blind ~%d%% of the time) rather than %s (~%d%%).",
+          mouth_lock_note = I18N.f("The Mouth: lock %s (clears the blind ~%d%% of the time) rather than %s (~%d%%).",
             top.ev.hand_type, math.floor(top.clear * 100 + 0.5), play_ev.hand_type,
             math.floor(((greedy and greedy.clear) or 0) * 100 + 0.5))
           play_ev, play_cards = top.ev, top.cards
@@ -1326,7 +1327,7 @@ local function decide_core(gs, opts)
           clears = remaining > 0 and play_ev.score >= remaining
           guaranteed = remaining > 0 and (play_ev.score_min or play_ev.score) >= remaining
           local names = ScalingFuel.fed_by(play_cards, play_ev, owned)
-          play_fuel_note = string.format("plays the %s to grow %s",
+          play_fuel_note = I18N.f("plays the %s to grow %s",
             play_ev.hand_type, table.concat(names, " + "))
         end
       end
@@ -1369,7 +1370,7 @@ local function decide_core(gs, opts)
     play_action.value = 0
     play_action.score = 0
     play_action.off_type_zero = true
-    play_action.reason = "No same-type hand available under The Mouth this deal — off-type plays score 0."
+    play_action.reason = I18N.t("No same-type hand available under The Mouth this deal — off-type plays score 0.")
   end
 
   -- play-time generators (Vagabond/Superposition/Seance/Midas): this play also
@@ -1419,7 +1420,7 @@ local function decide_core(gs, opts)
       play_action.ordering = nil
       play_action.play_econ = nil
       play_action.cycle_play = true
-      play_action.reason = string.format(
+      play_action.reason = I18N.f(
         "No legal hand this deal and no discards — play %d spare card%s for 0 to draw toward a legal hand.",
         #cyc, #cyc == 1 and "" or "s")
     end
@@ -1539,7 +1540,7 @@ function DE.leaf_sell(gs)
   return {
     type = "SELL_JOKER", target = { name = j.name or j.key, key = j.key, id = j.id }, leaf_sell = true,
     value = best_score, confidence = 0.8, confidence_basis = "heuristic_margin",
-    reason = string.format("Verdant Leaf: sell %s — your cards are debuffed until a joker is sold (best hand %d -> %d).",
+    reason = I18N.f("Verdant Leaf: sell %s — your cards are debuffed until a joker is sold (best hand %d -> %d).",
       j.name or j.key, math.floor(now_score), math.floor(best_score)),
   }
 end
@@ -1562,7 +1563,7 @@ function DE.free_slot_for_purple(gs, best)
     if c.set == "Planet" or HARMLESS_USE[c.key] then
       local name = c.name or c.key
       return { type = "USE_CONSUMABLE", target = { name = name, key = c.key }, use_names = { c.key }, use_keys = { c.key },
-        reason = string.format("Use %s first — it frees a consumable slot, so the Purple seal in your discard makes a Tarot.", name) }
+        reason = I18N.f("Use %s first — it frees a consumable slot, so the Purple seal in your discard makes a Tarot.", name) }
     end
   end
   return nil
@@ -1643,17 +1644,17 @@ function DE._annotate(best, c)
       local banked = math.max(0, (c.hands_left or 1) - 1)
       best.banked_money = banked
       local money_note = (banked > 0)
-        and string.format(" Banks $%d (%d unused hand%s).", banked, banked, banked == 1 and "" or "s")
+        and I18N.f(" Banks $%d (%d unused hand%s).", banked, banked, banked == 1 and "" or "s")
         or ""
-      local verb = c.guaranteed and "beats" or "should beat (RNG)"
+      local verb = c.guaranteed and I18N.t("beats") or I18N.t("should beat (RNG)")
       local seal_note = (best.play_econ and best.play_econ > 0)
-        and string.format(" +$%g from seals.", best.play_econ) or ""
-      best.reason = string.format("Play %s (%s) — %s the blind (%d ≥ %d).%s%s",
+        and I18N.f(" +$%g from seals.", best.play_econ) or ""
+      best.reason = I18N.f("Play %s (%s) — %s the blind (%d ≥ %d).%s%s",
         best.hand_type, labels(best.cards), verb, best.score, c.remaining, money_note, seal_note)
     elseif c.forced_play then
       best.confidence = 0.95
       best.expected_value = (c.remaining > 0) and (best.score - c.remaining) / c.remaining or 0
-      best.reason = string.format("Play %s (%s) — last hand, maximise score (%d vs %d needed).",
+      best.reason = I18N.f("Play %s (%s) — last hand, maximise score (%d vs %d needed).",
         best.hand_type, labels(best.cards), best.score, c.remaining)
     else
       -- default play: can't clear yet -> accumulate toward the requirement
@@ -1662,7 +1663,7 @@ function DE._annotate(best, c)
       best.expected_value = (alt > 0) and (best.value - alt) / alt or 0
       local after = math.max(0, c.remaining - best.score)
       local hl = math.max(0, (c.hands_left or 1) - 1)
-      best.reason = string.format("Play %s (%s) — +%d toward the blind; ~%d more over %d hand%s.",
+      best.reason = I18N.f("Play %s (%s) — +%d toward the blind; ~%d more over %d hand%s.",
         best.hand_type, labels(best.cards), best.score, after, hl, hl == 1 and "" or "s")
     end
     -- Order tip: if reordering jokers/cards beats the current order, say so. Only
@@ -1683,20 +1684,20 @@ function DE._annotate(best, c)
       if o.card_changed then tips[#tips + 1] = "cards " .. labels(o.card_order) end
       local desc, note
       if keeps_clear and o.money_gain <= 1e-9 then
-        desc = "the clear"
-        note = " — as dealt it falls short"
+        desc = I18N.t("the clear")
+        note = I18N.t(" — as dealt it falls short")
       elseif o.objective == "money" then
-        desc = string.format("+$%g this blind", o.money_gain) -- clear is already locked
+        desc = I18N.f("+$%g this blind", o.money_gain) -- clear is already locked
         note = ""
       else
         desc = (o.gain > 0) and string.format("+%d", o.gain) or "same score, safer"
         if not c.clears and c.remaining > 0 and o.best_score >= c.remaining then
-          note = " — this clears the blind"
+          note = I18N.t(" — this clears the blind")
         elseif c.remaining > 0 and o.current_min < c.remaining and o.best_min >= c.remaining then
-          note = " — this guarantees the clear"
+          note = I18N.t(" — this guarantees the clear")
         else note = "" end
       end
-      best.reason = best.reason .. string.format("  Reorder (%s) for %s%s.",
+      best.reason = best.reason .. I18N.f("  Reorder (%s) for %s%s.",
         table.concat(tips, ", "), desc, note)
       best.reorder = o -- structured suggestion for the UI
     end
@@ -1711,7 +1712,7 @@ function DE._annotate(best, c)
     local play_score = c.play_action.score
     best.confidence = clamp(0.40 + (best.weight or 0.5) * 0.6, 0.40, 0.85)
     best.expected_value = (play_score > 0) and (best.value - play_score) / play_score or 0
-    best.reason = best.reason or ("Discard " .. labels(best.cards) .. " to improve the hand.")
+    best.reason = best.reason or I18N.f("Discard %s to improve the hand.", labels(best.cards))
   end
 end
 
@@ -1720,7 +1721,7 @@ function DE.summary(ranked)
   if not ranked or not ranked.best then return "(no recommendation)" end
   local a = ranked.best
   local sim_backed = (a.confidence_basis == "win_probability" or a.confidence_basis == "draw_probability")
-  return string.format("%s | conf %d%% (%s) | %s %+d%% | %s",
+  return I18N.f("%s | conf %d%% (%s) | %s %+d%% | %s",
     a.type, math.floor((a.confidence or 0) * 100 + 0.5),
     sim_backed and "sim" or "heuristic",
     sim_backed and "EV" or "edge",

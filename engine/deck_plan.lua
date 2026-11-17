@@ -15,6 +15,7 @@ local Flags = require("engine.flags")
 local Cards = require("util.cards")
 local JokerData = require("engine.joker_data")
 local BuildPlan = require("engine.build_plan")   -- requires joker_data only; no cycle
+local I18N = require("util.i18n")   -- (EngineSim BR) translatable advice text
 
 local DP = {}
 
@@ -93,7 +94,7 @@ function DP.target(gs)
       t.hand = arch and arch.hands and arch.hands[1] or nil
       t.suit, t.ranks, t.face = ft.suit, ft.ranks, ft.face
       t.archetype = (ft.suit and "flush") or (ft.face and "face") or "hand"
-      t.reason = "Forced build — shape the deck toward it."
+      t.reason = I18N.t("Forced build — shape the deck toward it.")
       t.want_thin = n > DP.IDEAL_SIZE
       return t
     end
@@ -106,13 +107,13 @@ function DP.target(gs)
     t.committed, t.hand = true, commit.hand
     if commit.kind == "economy" then
       t.archetype = "thin"
-      t.reason = "Committed economy build — thin weak cards; preserve bankroll converters."
+      t.reason = I18N.t("Committed economy build — thin weak cards; preserve bankroll converters.")
     elseif commit.hand == "Flush" then
       t.archetype, t.suit = "flush", dom
-      t.reason = string.format("Committed Flush build — thin toward %s.", dom or "one suit")
+      t.reason = I18N.f("Committed Flush build — thin toward %s.", dom or "one suit")
     elseif commit.hand == "Straight" or commit.hand == "High Card" then
       t.archetype = "hand"
-      t.reason = "Committed " .. commit.hand .. " build — thin weak off-plan cards."
+      t.reason = I18N.f("Committed %s build — thin weak off-plan cards.", commit.hand)
     else
       -- Rank-made hands need an actual deck skew before choosing a rank. A fresh
       -- 52-card deck ties at four of every rank; arbitrarily declaring Aces there
@@ -131,7 +132,7 @@ function DP.target(gs)
       end
       t.archetype = "hand"
       if next(chosen) then t.ranks = chosen end
-      t.reason = "Committed " .. commit.hand .. " build — concentrate ranks and levels."
+      t.reason = I18N.f("Committed %s build — concentrate ranks and levels.", commit.hand)
     end
     t.want_thin = n > DP.IDEAL_SIZE
     return t
@@ -145,11 +146,11 @@ function DP.target(gs)
   end
   t.want_thin = n > DP.IDEAL_SIZE
   if t.archetype == "flush" then
-    t.reason = string.format("Flush build — thin toward %s; cut off-suit cards.", t.suit or "one suit")
+    t.reason = I18N.f("Flush build — thin toward %s; cut off-suit cards.", t.suit or "one suit")
   elseif t.archetype == "face" then
-    t.reason = "Face build — cut low cards."
+    t.reason = I18N.t("Face build — cut low cards.")
   else
-    t.reason = t.want_thin and "Thin the weakest cards for consistency." or "Deck is already lean."
+    t.reason = t.want_thin and I18N.t("Thin the weakest cards for consistency.") or I18N.t("Deck is already lean.")
   end
   return t
 end

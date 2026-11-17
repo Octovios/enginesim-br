@@ -32,6 +32,7 @@ local BuildPlan = require("engine.build_plan")
 local Generators = require("engine.generators")
 local VU = require("engine.value_units")
 local Progress = require("util.progress")   -- the live Thinking bar (inert unless armed)
+local I18N = require("util.i18n")   -- (EngineSim BR) translatable advice text
 
 local SA = {}
 
@@ -366,8 +367,8 @@ function SA.bankroll_plan(gs, opts)
   target = math.max(target, math.min(reserve, d))   -- never plan below the reserve
   local budget = math.max(0, d - target)
   local reason = budget > 0
-    and string.format("Plan: end the shop at $%d (max interest); $%d free to spend.", target, budget)
-    or  string.format("Plan: hold $%d for interest (nothing free to spend).", target)
+    and I18N.f("Plan: end the shop at $%d (max interest); $%d free to spend.", target, budget)
+    or  I18N.f("Plan: hold $%d for interest (nothing free to spend).", target)
   return { target = target, budget = budget, reason = reason }
 end
 
@@ -486,14 +487,14 @@ local function synergy_bonus(gs, sj)
   for _, tag in ipairs(e.tags) do
     if tag == "copy" then
       if have > 0 then bonus = bonus + 2.5; note = note or "copies your best joker"
-      elseif ShopState.slots_free(gs) >= 2 then note = "copies the next joker you buy"   -- JokerWorth.copier_future_frac
-      else bonus = bonus - 3.0; note = "no joker to copy yet" end
+      elseif ShopState.slots_free(gs) >= 2 then note = I18N.t("copies the next joker you buy")   -- JokerWorth.copier_future_frac
+      else bonus = bonus - 3.0; note = I18N.t("no joker to copy yet") end
     elseif tag == "xmult" and have > 0 then
       bonus = bonus + 1.0
     elseif tag:match("^suit:") then
       local s = tag:sub(6)
       local r = ratio_suit(s)
-      if r > 0.28 then bonus = bonus + r * 4; note = note or (s .. "-heavy deck (" .. math.floor(r * 100) .. "%)") end
+      if r > 0.28 then bonus = bonus + r * 4; note = note or I18N.f("%s-heavy deck (%d%%)", s, math.floor(r * 100)) end
     elseif tag == "rank:even" and p.even / total > 0.45 then
       bonus = bonus + 1.5; note = note or "even-heavy deck"
     elseif tag == "rank:odd" and p.odd / total > 0.45 then
@@ -516,7 +517,7 @@ local function synergy_bonus(gs, sj)
     elseif tag:match("^seal:") then
       -- seals are rare + intentional, so any in-deck is a real synergy (Mime's
       -- gold seals, retrigger-on-seal combos).
-      if p.seal > 0 then bonus = bonus + math.min(p.seal, 6) * 0.3; note = note or (p.seal .. " sealed cards") end
+      if p.seal > 0 then bonus = bonus + math.min(p.seal, 6) * 0.3; note = note or I18N.f("%d sealed cards", p.seal) end
     elseif tag == "retrigger" then
       -- a retrigger joker's hidden value is DOUBLING your seals/enhancements --
       -- exactly the payload the greedy single-hand sampler tends not to play (and
@@ -935,11 +936,11 @@ local function offer_joker(S, sj)
   local why = note and (" — " .. note)
     or (fnote and (" — " .. fnote))
     or (down > 0 and " — but has a situational downside")
-    or (econ > 0 and string.format(" — +$%d/round", econ) or "")
+    or (econ > 0 and I18N.f(" — +$%d/round", econ) or "")
   local entry = {
     type = "BUY_JOKER", target = sj, cost = cost, value = value, need_jslot = true,
     name = sj.name or sj.key or "joker",
-    reason = string.format("Buy %s ($%d) — adds ~%.0f%% of a boss hand%s.",
+    reason = I18N.f("Buy %s ($%d) — adds ~%.0f%% of a boss hand%s.",
       sj.name or sj.key or "joker", cost, math.max(0, sgain) * 100, why),
   }
   -- WS-3 instrumentation (gated): expose the value decomposition so a replay can see WHICH term
@@ -1061,11 +1062,11 @@ local function offer_voucher(S, v)
   local saved = Vouchers.savings_dollars(gs, v.key)
   if saved then
     value = w_score * vval + w_econ * cost_w * saved - net_cost_c(cost)
-    vnote = string.format("%s -- saves ~$%d over the rest of the run", vnote or "discount", math.floor(saved + 0.5))
+    vnote = I18N.f("%s -- saves ~$%d over the rest of the run", vnote or "discount", math.floor(saved + 0.5))
   end
   local entry = {
     type = "BUY_VOUCHER", target = v, cost = cost, value = value, name = vname,
-    reason = string.format("Buy %s ($%d) — %s.", vname, cost, vnote or "permanent upgrade"),
+    reason = I18N.f("Buy %s ($%d) — %s.", vname, cost, vnote or I18N.t("permanent upgrade")),
   }
   priced[#priced + 1] = entry
   local leaves = dollars(gs) - cost
@@ -1132,7 +1133,7 @@ local function offer_pack(S, pk)
   local entry = {
     type = "BUY_PACK", target = pk, cost = cost, value = value,
     name = Packs.display_name(pk.key or pk.name, pk.name),
-    reason = string.format("Open %s ($%d) — %s%s%s.",
+    reason = I18N.f("Open %s ($%d) — %s%s%s.",
       Packs.display_name(pk.key or pk.name, pk.name), cost, pnote,
       (nnote and (" — " .. nnote) or ""),
       (snote ~= "" and (" [+" .. snote .. "]") or "")),
@@ -1191,14 +1192,14 @@ local function offer_reroll(S)
       or clamp(SA.REROLL_BASE_COST / rcost, SA.REROLL_ESCALATION_FLOOR, 1)
     local value = appetite * escalation * realizable * SA.REROLL_DISCOUNT * w_score * 5 * eff_improvement
       + w_score * 5 * rbonus - net_cost(rcost) - econ_floor_penalty(gs, rcost)
-    local gate = (rcost == 0 and "free reroll") or (final and "final shop -- spare money buys nothing later")
-      or (above_cap and "above interest cap")
-      or (not secure and "at risk -- need a better joker") or "below cap & safe -- hold"
+    local gate = (rcost == 0 and I18N.t("free reroll")) or (final and I18N.t("final shop -- spare money buys nothing later"))
+      or (above_cap and I18N.t("above interest cap"))
+      or (not secure and I18N.t("at risk -- need a better joker")) or I18N.t("below cap & safe -- hold")
     if rnote ~= "" and rnote then gate = gate .. ", " .. rnote end
     local rentry = {
       type = "REROLL", cost = rcost, value = value,
-      reason = string.format("Reroll ($%d) — expected best ~%.0f%% of a boss hand (+%.0f%% over current; %s).",
-        rcost, math.max(0, e_best) * 100, improvement * 100, bar and (gate .. "; net of replacing your weakest") or gate),
+      reason = I18N.f("Reroll ($%d) — expected best ~%.0f%% of a boss hand (+%.0f%% over current; %s).",
+        rcost, math.max(0, e_best) * 100, improvement * 100, bar and I18N.f("%s; net of replacing your weakest", gate) or gate),
     }
     if Flags.global("BES_VALUE_DEBUG") then   -- read-only decomposition (same pattern as the BUY_JOKER dbg)
       rentry.dbg = { e_best = e_best, best_offer = best_offer, improvement = improvement, eff = eff_improvement,
@@ -1221,7 +1222,7 @@ local function offer_reroll(S)
         local surplus = dollars(gs) - (e.cost or 10) - cap_dollars
         local gate = clamp(surplus / (e.cost or 10), 0, 1)
         e.value = e.value + gate * per_card * horizon
-        e.reason = string.format("Buy %s ($%d) — +1 card in every shop view (~%.0f views left this run).",
+        e.reason = I18N.f("Buy %s ($%d) — +1 card in every shop view (~%.0f views left this run).",
           e.name or "Overstock", e.cost or 10, horizon * 2)
       end
     end
@@ -1386,17 +1387,17 @@ local function offer_joker_sale(S)
         value = money_w * eff_cash + SA.W_FV * (nudge + sbonus + farm - worst_c - spen)   -- pure sale: charge lost value once
       end
       local why
-      if farm > 0 and upgrade <= 0 then why = "frees a slot for your Joker-spawner (e.g. Riff-Raff) to farm next blind"
-      elseif upgrade > 0 then why = "frees a slot for " .. (up_name or "a better joker")
+      if farm > 0 and upgrade <= 0 then why = I18N.t("frees a slot for your Joker-spawner (e.g. Riff-Raff) to farm next blind")
+      elseif upgrade > 0 then why = I18N.f("frees a slot for %s", up_name or I18N.t("a better joker"))
       elseif sbonus > 0 then why = sbnote
-      elseif nudge > 0 then why = "decaying/temporary — bank it before it expires"
+      elseif nudge > 0 then why = I18N.t("decaying/temporary — bank it before it expires")
       elseif owns_slot_synergy and worst_c <= 0.05 then
-        why = "frees a Joker slot — raises Joker Stencil's xMult"
-      elseif worst_c <= 0.05 then why = "contributes almost nothing"
-      else why = "lowest contribution on the board" end
+        why = I18N.t("frees a Joker slot — raises Joker Stencil's xMult")
+      elseif worst_c <= 0.05 then why = I18N.t("contributes almost nothing")
+      else why = I18N.t("lowest contribution on the board") end
       actions[#actions + 1] = {
         type = "SELL_JOKER", target = j, cost = 0, value = value,
-        reason = string.format("Sell %s (+$%d) — %s.", j.name or j.key or "joker", cash, why),
+        reason = I18N.f("Sell %s (+$%d) — %s.", j.name or j.key or "joker", cash, why),
       }
     end
     -- BEST-TRADE SWAP (2026-09-27, owner, live 2YD6L372: "it rerolled past a Trio which would have probably won it").
@@ -1474,8 +1475,8 @@ local function offer_joker_sale(S)
           -- a paired trade carries what its buy is worth, so the next state (slot now free) still completes it
           pending_swap = best_t.paired and { key = best_t.sj.key, edition = best_t.sj.edition or false,
             up = best_t.up, sold_fv = best_t.sold_fv } or nil,
-          reason = string.format("Sell %s (+$%d) — frees a slot for %s, a clear upgrade.",
-            tj.name or tj.key or "joker", best_t.cash, best_t.sj.name or best_t.sj.key or "a better joker"),
+          reason = I18N.f("Sell %s (+$%d) — frees a slot for %s, a clear upgrade.",
+            tj.name or tj.key or "joker", best_t.cash, best_t.sj.name or best_t.sj.key or I18N.t("a better joker")),
         }
       end
     end
@@ -1508,7 +1509,7 @@ local function offer_joker_sale(S)
           local fvalue = fmoney + SA.W_FV * (Eval.FV_JOKER_WEIGHT * spawned - (feff - fc) - fc)
           actions[#actions + 1] = {
             type = "SELL_JOKER", target = fj, cost = 0, value = fvalue,
-            reason = string.format("Sell %s (+$%d) — frees a slot for your Joker-spawner (Riff-Raff) to fill next blind.",
+            reason = I18N.f("Sell %s (+$%d) — frees a slot for your Joker-spawner (Riff-Raff) to fill next blind.",
               fj.name or fj.key or "joker", fcash),
           }
         end
@@ -1561,9 +1562,9 @@ local function offer_income_tarot_funding(S)
     actions[#actions + 1] = {
       type = "USE_CONSUMABLE", target = best.c, use_names = { best.c.key },
       kind = "income", gain = best.gain, value = best.value, then_buy = best.p,
-      reason = string.format(
+      reason = I18N.f(
         "Use %s (+$%d) to afford %s -- its measured gain beats waiting for a larger payout.",
-        best.c.name or best.c.key, best.gain, best.p.name or "the shop item"),
+        best.c.name or best.c.key, best.gain, best.p.name or I18N.t("the shop item")),
     }
   end
 end
@@ -1594,7 +1595,7 @@ local function offer_income_tarot_use(S)
       actions[#actions + 1] = {
         type = "USE_CONSUMABLE", target = c, use_names = { c.key }, kind = "income",
         gain = gain, value = gain * dollar_u,
-        reason = string.format(
+        reason = I18N.f(
           "Use %s now (+$%d, free) -- its payout is maxed, so holding it only risks the slot; use it BEFORE you spend.",
           c.name or c.key, gain),
       }
@@ -1732,8 +1733,8 @@ local function offer_sell_to_buy(S)
     actions[#actions + 1] = {
       type = "SELL_TO_BUY", target = best.f.target, cost = 0, value = best.value,
       sell_kind = best.f.kind, then_buy = best.p,
-      reason = string.format("Sell %s (+$%d) to afford %s — the gain beats keeping it.",
-        best.f.name, best.f.cash, best.p.name or "the shop item"),
+      reason = I18N.f("Sell %s (+$%d) to afford %s — the gain beats keeping it.",
+        best.f.name, best.f.cash, best.p.name or I18N.t("the shop item")),
     }
   end
 end
@@ -1763,7 +1764,7 @@ local function offer_held_planet_use(S)
       actions[#actions + 1] = {
         type = "USE_CONSUMABLE", target = c, cost = 0, use_keys = { c.key }, hand_type = hand,
         value = math.max(1e-3, w_score * SA.JOKER_SCORE_WEIGHT * vfrac),
-        reason = string.format("Use %s now — the level is permanent, and holding it blocks a slot and keeps that planet out of the shop.",
+        reason = I18N.f("Use %s now — the level is permanent, and holding it blocks a slot and keeps that planet out of the shop.",
           c.name or c.key),
       }
     end
@@ -1783,7 +1784,7 @@ local function offer_held_joker_maker_use(S)
         actions[#actions + 1] = {
           type = "USE_CONSUMABLE", target = c, cost = 0, use_keys = { c.key },
           value = w_score * SA.JOKER_SCORE_WEIGHT * created,
-          reason = string.format("Use %s now — a joker slot is free for the joker it makes.", c.name or c.key),
+          reason = I18N.f("Use %s now — a joker slot is free for the joker it makes.", c.name or c.key),
         }
       end
       break
@@ -1843,9 +1844,9 @@ local function lead_with_pack(S)
     if best_pack and best_idx > 1 then
       table.remove(actions, best_idx)
       table.insert(actions, 1, best_pack)
-      best_pack.reason = (best_pack.reason or "") .. string.format(
+      best_pack.reason = (best_pack.reason or "") .. I18N.f(
         "  [Open this BEFORE buying %s — a pack is free info (it may make the buy redundant) and you can afford both.]",
-        (top.target and (top.target.name or top.target.key)) or "the shop item")
+        (top.target and (top.target.name or top.target.key)) or I18N.t("the shop item"))
     end
   end
 end
@@ -1934,9 +1935,9 @@ local function recommend(gs, opts)
     type = "SAVE", cost = 0, value = 0,
     reason = SA.final_shop(gs)
       and "Leave the shop -- nothing left here helps the final boss (money left over is worth nothing now)."
-      or string.format("Bank $%d for interest (+$%d/round).%s",
+      or I18N.f("Bank $%d for interest (+$%d/round).%s",
       dollars(gs), interest_at(dollars(gs), cap_int_of(gs)),   -- true cap, not the 5x-over-stated live value
-      plan.budget > 0 and string.format(" $%d is interest-free — free to spend.", plan.budget) or ""),
+      plan.budget > 0 and I18N.f(" $%d is interest-free — free to spend.", plan.budget) or ""),
   }
   local shop = gs.shop
   if not shop then return { best = save, alternatives = {}, reason = save.reason } end
@@ -1987,7 +1988,7 @@ end
 function SA.summary(ranked)
   if not ranked or not ranked.best then return "(no shop recommendation)" end
   local a = ranked.best
-  return string.format("SHOP: %s | conf %d%% (heuristic) | %s", a.type,
+  return I18N.f("SHOP: %s | conf %d%% (heuristic) | %s", a.type,
     math.floor((a.confidence or 0) * 100 + 0.5), a.reason or "")
 end
 

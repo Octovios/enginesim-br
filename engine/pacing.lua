@@ -17,6 +17,7 @@ local Mechanics = require("engine.mechanics")
 local JokerValue = require("engine.joker_value")
 local JokerData = require("engine.joker_data")
 local BossEffect = require("engine.boss_effect")
+local I18N = require("util.i18n")   -- (EngineSim BR) translatable advice text
 
 local P = {}
 
@@ -200,8 +201,8 @@ function P.pace(gs, opts)
       or (P.BOSS_AWARE and boss_short(gs, ante, hands, avg, opts)) or false,
     projected_at_8 = proj8, required_at_8 = req8, margin = margin, risk = risk,
     reason = (risk >= 0.5)
-      and string.format("At risk (~%d%% chance to die within 2 antes) — build power", math.floor(risk * 100 + 0.5))
-      or string.format("On pace (~%d%% risk over the next 2 antes)", math.floor(risk * 100 + 0.5)),
+      and I18N.f("At risk (~%d%% chance to die within 2 antes) — build power", math.floor(risk * 100 + 0.5))
+      or I18N.f("On pace (~%d%% risk over the next 2 antes)", math.floor(risk * 100 + 0.5)),
   }
 end
 

@@ -568,19 +568,19 @@ function T.target_note(gs, key, pool)
       local labels = {}
       for _, c in ipairs(targets) do labels[#labels + 1] = disambig_label(c, name_pool) end
       local list = table.concat(labels, ", ")
-      if suit then return string.format("convert %s → %s", list, suit) end
-      return "apply to " .. list
+      if suit then return I18N.f("convert %s → %s", list, suit) end
+      return I18N.f("apply to %s", list)
     end
   end
   -- no drawn cards to name yet -> generic strategy (also: non-targeting tarots -> nil)
   local spec = T.ENH[key]
   if spec then
-    if key == "c_tower" then return "apply to your weakest card" end  -- Stone wipes rank/suit
-    if spec.enh == "m_gold" or spec.enh == "m_steel" then return "apply to a spare card you will HOLD, not play" end
-    return string.format("apply to your %d highest-value card%s", spec.n, spec.n == 1 and "" or "s")
+    if key == "c_tower" then return I18N.t("apply to your weakest card") end  -- Stone wipes rank/suit
+    if spec.enh == "m_gold" or spec.enh == "m_steel" then return I18N.t("apply to a spare card you will HOLD, not play") end
+    return I18N.f("apply to your %d highest-value card%s", spec.n, spec.n == 1 and "" or "s")
   end
   local s = T.SUIT[key]
-  if s then return string.format("convert up to 3 of your highest non-%s cards → %s", s, s) end
+  if s then return I18N.f("convert up to 3 of your highest non-%s cards → %s", s, s) end
   return nil
 end
 
@@ -622,7 +622,7 @@ function T.best_use(gs, base_ev, remaining, dollar_value, filter)
         if gain >= T.HERMIT_MAX_GAIN then
           consider({ type = "USE_CONSUMABLE", target = { name = name }, kind = "income",
             gain = gain, value = gain * dollar_value,
-            reason = string.format("Use %s — double your money (+$%d).", name, gain) })
+            reason = I18N.f("Use %s — double your money (+$%d).", name, gain) })
         end
       elseif c.key == "c_temperance" then
         local s = 0
@@ -631,7 +631,7 @@ function T.best_use(gs, base_ev, remaining, dollar_value, filter)
         if s > 0 then
           consider({ type = "USE_CONSUMABLE", target = { name = name }, kind = "income",
             gain = s, value = s * dollar_value,
-            reason = string.format("Use %s — +$%d from joker sell values.", name, s) })
+            reason = I18N.f("Use %s — +$%d from joker sell values.", name, s) })
         end
       elseif T.THIN[c.key] then
         -- Hanged Man: destroy the worst chaff cards (permanent thinning). Only worth it when
@@ -650,7 +650,7 @@ function T.best_use(gs, base_ev, remaining, dollar_value, filter)
               play_cards = cards2, hand_type = ev2.hand_type, score = ev2.score,
               value = ev2.score + T.THIN_CREDIT * ndel * math.max(base, 1),
               target_cards = tcards, use_keys = { c.key },
-              reason = string.format("Use %s to thin %d weak card(s) (permanent), then play %s.",
+              reason = I18N.f("Use %s to thin %d weak card(s) (permanent), then play %s.",
                 name, ndel, ev2.hand_type or "") })
           end
         end
@@ -689,9 +689,9 @@ function T.best_use(gs, base_ev, remaining, dollar_value, filter)
               value = ev2.score + credit + money * dollar_value, permanence_credit = credit,
               target_note = tn, target_cards = tcards, target_order = torder, order_hint = ohint, use_keys = { c.key },
               reason = (money > 0 and gain <= 0)
-                and string.format("Use %s%s — $3 each round it is held at round end (~$%d over the run).",
+                and I18N.f("Use %s%s — $3 each round it is held at round end (~$%d over the run).",
                   name, tn and (" (" .. tn .. ")") or "", math.floor(money + 0.5))
-                or string.format("Use %s%s, then play %s — %d vs %d.",
+                or I18N.f("Use %s%s, then play %s — %d vs %d.",
                   name, tn and (" (" .. tn .. ")") or "", ev2.hand_type, ev2.score, base) })
           end
         end

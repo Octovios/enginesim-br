@@ -71,9 +71,9 @@ function Advice.from_pack(po)
       target = { name = po.use_first.name, key = po.use_first.key }, use_keys = { po.use_first.key },
       cards = po.use_first.cards, target_cards = tcards,
       reason = chain
-        and string.format("Use %s on %s first, then take %s and copy that Gold card (three Gold cards).",
+        and I18N.f("Use %s on %s first, then take %s and copy that Gold card (three Gold cards).",
           po.use_first.name, Cards.label(po.use_first.cards[1]), po.use_first.for_name or "the pick")
-        or string.format("Use %s first to free a consumable slot for %s, then take it.",
+        or I18N.f("Use %s first to free a consumable slot for %s, then take it.",
           po.use_first.name, po.use_first.for_name or "the pick"),
       confidence = 0.7,
     }
@@ -86,7 +86,7 @@ function Advice.from_pack(po)
       type = "SELL_JOKER",
       target = { name = po.sell.name, key = po.sell.key, id = po.sell.id },
       make_room_for = po.sell.for_name,
-      reason = string.format("Sell %s to make room for %s, then take it.",
+      reason = I18N.f("Sell %s to make room for %s, then take it.",
         po.sell.name, po.sell.for_name or (pick and (pick.name or pick.key)) or "the pick"),
       confidence = 0.7,
     }

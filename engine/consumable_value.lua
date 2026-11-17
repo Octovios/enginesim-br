@@ -15,6 +15,7 @@ local DeckPlan = require("engine.deck_plan")
 local VU = require("engine.value_units")
 local Cards = require("util.cards")
 local BuildPlan = require("engine.build_plan")
+local I18N = require("util.i18n")   -- (EngineSim BR) translatable advice text
 
 local CV = {}
 
@@ -597,7 +598,7 @@ function CV.suit_tarot_value(gs, key, need, opts)
   local target = DeckPlan.target(gs)
   local established_flush = (target.archetype == "flush" and target.suit ~= nil)
   if established_flush and target.suit ~= suit then
-    return 0.0, string.format("doesn't fit your %s flush", target.suit)
+    return 0.0, I18N.f("doesn't fit your %s flush", target.suit)
   end
 
   -- cards eligible to convert: off-suit, non-wild (a wild already counts as the
@@ -638,11 +639,11 @@ function CV.suit_tarot_value(gs, key, need, opts)
   local v = math.max(0, gain) / need
   if not established_flush then v = math.max(v, 0.03) end
   if gain > 0 then
-    return v, string.format("build a %s flush ~+%d score", suit, math.floor(gain))
+    return v, I18N.f("build a %s flush ~+%d score", suit, math.floor(gain))
   elseif v > 0 then
-    return v, string.format("weak flush starter toward %s", suit)
+    return v, I18N.f("weak flush starter toward %s", suit)
   end
-  return 0.0, string.format("no flush benefit toward %s", suit)
+  return 0.0, I18N.f("no flush benefit toward %s", suit)
 end
 
 -- Value of a SEAL SPECTRAL (Talisman=Gold, Deja Vu=Red, Trance=Blue, Medium=Purple): it adds one seal to a
@@ -981,12 +982,12 @@ local function tarot_value(gs, key, need, rng, samples)
   if key == "c_emperor" and in_emperor then return 0, 0, "tarot" end
   if key == "c_hermit" then
     local g = math.min(dollars(gs), 20)        -- doubles money, max +$20
-    return 0, g, string.format("double money +$%d", g)
+    return 0, g, I18N.f("double money +$%d", g)
   elseif key == "c_temperance" then
     local s = 0
     for _, j in ipairs(gs.jokers or {}) do s = s + (j.sell_value or 0) end
     s = math.min(s, 50)
-    return 0, s, string.format("+$%d joker sell value", s)
+    return 0, s, I18N.f("+$%d joker sell value", s)
   elseif key == "c_hanged_man" then
     -- The Hanged Man destroys up to 2 SELECTED cards -> targeted thinning of
     -- your worst (off-suit / low) cards toward the run's deck target.
@@ -998,9 +999,9 @@ local function tarot_value(gs, key, need, rng, samples)
   if key == "c_high_priestess" or key == "c_emperor" then
     -- inside an open pack the pack advisor applies the landing itself (gen_fit, with make-room credit)
     local landed = gs.pack and 2 or CV.created_consumables_land(gs, key, 2)
-    if landed <= 0 then return 0, 0, "no free consumable slot for its output" end
+    if landed <= 0 then return 0, 0, I18N.t("no free consumable slot for its output") end
     local mean = (key == "c_high_priestess") and CV.mean_random_planet(gs, rng) or CV.mean_random_tarot(gs, rng)
-    return landed * mean * (CV.GEN_USE_RATE[key] or 1), 0, string.format("%d random %s", landed, key == "c_high_priestess" and "planets" or "tarots")
+    return landed * mean * (CV.GEN_USE_RATE[key] or 1), 0, I18N.f("%d random %s", landed, key == "c_high_priestess" and I18N.t("planets") or I18N.t("tarots"))
   elseif key == "c_judgement" then
     local v = require("engine.packs").expected_shop_joker(gs, 1, { rng = rng, samples = 4 }) or 0
     local free = ((gs.run and gs.run.joker_slots) or 5) - #(gs.jokers or {})
@@ -1034,7 +1035,7 @@ local function tarot_value(gs, key, need, rng, samples)
     local frac = math.max(0, sv) / need
     if CV.TAROT_PER_HAND then frac = frac * CV.tarot_presence(gs, (spec and spec.n) or (Tarot.RANK[key] and 2) or 1) end
     frac = frac * require("engine.deck_plan").DECKQ_MULT   -- deck-quality calibration test (BES_DECKQ_MULT)
-    return frac + econ, 0, string.format("enhance ~+%d score", math.floor(math.max(0, sv)))
+    return frac + econ, 0, I18N.f("enhance ~+%d score", math.floor(math.max(0, sv)))
   end
   return CV.TAROT_BASE[key] or 0.15, 0, "tarot"
 end
@@ -1072,11 +1073,11 @@ local function spectral_value(gs, key, need, rng, samples)
     local note
     if key == "c_ankh" then
       note = (nsell > 0)
-        and string.format("gain a 2nd copy of your best joker — SELL your %d weaker joker(s) FIRST so Ankh doubles the BEST (else it copies a random one)", nsell)
+        and I18N.f("gain a 2nd copy of your best joker — SELL your %d weaker joker(s) FIRST so Ankh doubles the BEST (else it copies a random one)", nsell)
         or "gain a 2nd copy of your joker"
     else
       note = (nsell > 0)
-        and string.format("polychrome your best joker (+x1.5 mult) — but DESTROYS %d other joker(s); sell them first if keeping the best is worth it", nsell)
+        and I18N.f("polychrome your best joker (+x1.5 mult) — but DESTROYS %d other joker(s); sell them first if keeping the best is worth it", nsell)
         or "polychrome your joker (+x1.5 mult)"
     end
     return gain - others, 0, note
@@ -1089,7 +1090,7 @@ local function spectral_value(gs, key, need, rng, samples)
     local rare = require("engine.packs").expected_joker_of_rarity(gs, "Rare", { rng = rng, samples = samples }) or CV.WRAITH_JOKER
     local free = ((gs.run and gs.run.joker_slots) or 5) - #(gs.jokers or {})
     local v = rare * (free >= 1 and 1 or 0.7) - VU.income_frac(gs, d)
-    return v, 0, string.format("spawns a rare Joker but ZEROES your $%d", d)
+    return v, 0, I18N.f("spawns a rare Joker but ZEROES your $%d", d)
   end
   if key == "c_ouija" then
     -- converts ALL cards to one random rank (helps pairs/Flush House, KILLS straights)
@@ -1163,7 +1164,7 @@ local function spectral_value(gs, key, need, rng, samples)
   if SEAL_SPECTRAL[key] then
     local seal = SEAL_SPECTRAL[key]
     local v = CV.seal_spectral_value(gs, seal, need, { rng = rng, samples = samples })
-    return v, 0, string.format("adds a %s seal to your best card", seal)
+    return v, 0, I18N.f("adds a %s seal to your best card", seal)
   end
   if key == "c_sigil" then
     return CV.sigil_value(gs, need, { rng = rng, samples = samples }), 0, "converts ~a hand to one suit (flush enabler)"

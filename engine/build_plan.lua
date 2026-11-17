@@ -23,6 +23,7 @@
 
 local Flags = require("engine.flags")
 local JokerData = require("engine.joker_data")
+local I18N = require("util.i18n")   -- (EngineSim BR) translatable advice text
 
 local BP = {}
 
@@ -600,9 +601,9 @@ function BP.fit(gs, sj, plan, invest)
   -- DILUTION (always on): a redundant flat-mult / econ joker occupies a slot a compounding
   -- piece would use, and adds only a small additive term. Damp it so the board stays dense.
   if is_flat(key) and plan.n_flat >= BP.FLAT_CAP then
-    fit = fit - BP.FLAT_GLUT; note = "redundant flat mult — dilutes the board"
+    fit = fit - BP.FLAT_GLUT; note = I18N.t("redundant flat mult — dilutes the board")
   elseif is_econ(key) and plan.n_econ >= BP.ECON_CAP then
-    fit = fit - BP.ECON_GLUT; note = "already have economy — money isn't the win condition"
+    fit = fit - BP.ECON_GLUT; note = I18N.t("already have economy — money isn't the win condition")
   end
 
   -- INVESTMENT (only when survival now is OK but we're behind the ante race): build the
@@ -611,10 +612,10 @@ function BP.fit(gs, sj, plan, invest)
   if invest then
     if JokerData.is_xmult(key) and plan.needs_xmult then
       fit = fit + BP.XMULT_FILL
-      note = "xmult to multiply your scoring base (invest: safe now, compounds later)"
+      note = I18N.t("xmult to multiply your scoring base (invest: safe now, compounds later)")
     elseif JokerData.is_scaling(key) and plan.needs_scaling then
       fit = fit + BP.SCALING_FILL
-      note = note or "scaler grows all run (invest: safe now, compounds later)"
+      note = note or I18N.t("scaler grows all run (invest: safe now, compounds later)")
     end
   end
 
@@ -631,19 +632,19 @@ function BP.fit(gs, sj, plan, invest)
       for _, hand in ipairs(tags) do if BP.hand_matches(commit.hand, hand) then matched = true; break end end
       if matched then
         fit = fit + BP.COMMIT_JOKER_FILL
-        note = "fits committed " .. commit.hand .. " build"
+        note = I18N.f("fits committed %s build", commit.hand)
       elseif #tags > 0 then
         fit = fit - BP.COMMIT_MISMATCH
-        note = note or "off-plan hand payoff"
+        note = note or I18N.t("off-plan hand payoff")
       end
     elseif commit.kind == "economy" then
       local e = JokerData.resolve(key)
       if key == "j_bull" or key == "j_bootstraps" then
         fit = fit + BP.COMMIT_JOKER_FILL
-        note = "converts the committed bankroll into score"
+        note = I18N.t("converts the committed bankroll into score")
       elseif e.cat == "economy" then
         fit = fit + BP.COMMIT_JOKER_FILL * 0.5 * BP.econ_runway(gs)
-        note = note or "supports the committed economy build"
+        note = note or I18N.t("supports the committed economy build")
       end
     end
   end

@@ -58,6 +58,7 @@ end
 --   target(p) -> DeckPlan target fields { suit =, ranks =, face = }
 --   need     = core-piece weight that makes the build "complete" (default 2.5)
 --   kind     = "hand" (default when hands) | "economy" | "free"
+--   favoured(p) -> true when the deck holds clearly MORE of what the build needs than a standard deck (optional)
 A.LIST = {
   { id = "flush_any",
     name = { en = "Flush (any suit)", pt = "Flush (qualquer naipe)" },
@@ -72,7 +73,7 @@ A.LIST = {
     deck = function(p) return clamp01(0.55 + 2 * math.max(0, (p.dominant_share or 0.25) - 0.25)), nil end,
     target = function(p) return { suit = p.dominant_suit } end },
 
-  { id = "flush_hearts",
+  { id = "flush_hearts", favoured = function(p) return share((p.suits.Hearts or 0) + p.wilds, p.n) >= 0.4 end,
     name = { en = "Hearts Flush (Bloodstone)", pt = "Flush de Copas (Bloodstone)" },
     desc = { en = "All-in on Hearts: Bloodstone xMult, Lusty Joker.", pt = "Tudo em Copas: Bloodstone xMult, Lusty Joker." },
     hands = { "Flush" }, suit = "Hearts",
@@ -82,7 +83,7 @@ A.LIST = {
     tarots = { "c_sun", "c_lovers", "c_death", "c_hanged_man", "c_sigil" }, enh = "m_wild",
     deck = suit_fit("Hearts"), target = function() return { suit = "Hearts" } end },
 
-  { id = "flush_diamonds",
+  { id = "flush_diamonds", favoured = function(p) return share((p.suits.Diamonds or 0) + p.wilds, p.n) >= 0.4 end,
     name = { en = "Diamonds Flush (Rough Gem)", pt = "Flush de Ouros (Rough Gem)" },
     desc = { en = "Diamonds pay: Rough Gem $1 each, Greedy Joker.", pt = "Ouros dão dinheiro: Rough Gem $1 cada, Greedy Joker." },
     hands = { "Flush" }, suit = "Diamonds",
@@ -92,7 +93,7 @@ A.LIST = {
     tarots = { "c_star", "c_lovers", "c_death", "c_hanged_man", "c_sigil" }, enh = "m_wild",
     deck = suit_fit("Diamonds"), target = function() return { suit = "Diamonds" } end },
 
-  { id = "flush_spades",
+  { id = "flush_spades", favoured = function(p) return share((p.suits.Spades or 0) + p.wilds, p.n) >= 0.4 end,
     name = { en = "Spades Flush (Arrowhead)", pt = "Flush de Espadas (Arrowhead)" },
     desc = { en = "Spades: Arrowhead +50 Chips each, Wrathful Joker, Blackboard.", pt = "Espadas: Arrowhead +50 Fichas cada, Wrathful Joker, Blackboard." },
     hands = { "Flush" }, suit = "Spades",
@@ -102,7 +103,7 @@ A.LIST = {
     tarots = { "c_world", "c_lovers", "c_death", "c_hanged_man", "c_sigil" }, enh = "m_wild",
     deck = suit_fit("Spades"), target = function() return { suit = "Spades" } end },
 
-  { id = "flush_clubs",
+  { id = "flush_clubs", favoured = function(p) return share((p.suits.Clubs or 0) + p.wilds, p.n) >= 0.4 end,
     name = { en = "Clubs Flush (Onyx Agate)", pt = "Flush de Paus (Onyx Agate)" },
     desc = { en = "Clubs: Onyx Agate +7 Mult each, Gluttonous Joker, Blackboard.", pt = "Paus: Onyx Agate +7 Mult cada, Gluttonous Joker, Blackboard." },
     hands = { "Flush" }, suit = "Clubs",
@@ -123,7 +124,7 @@ A.LIST = {
     deck = function(p) return (p.n_suits > 0 and 1 or 0.6), nil end,
     target = function() return {} end },
 
-  { id = "pairs",
+  { id = "pairs", favoured = function(p) return (p.top_rank_n or 0) >= 6 end,
     name = { en = "Pair / Two Pair", pt = "Par e Dois Pares" },
     desc = { en = "Small hands: The Duo, Jolly, Mad, Spare Trousers.", pt = "Mãos pequenas: The Duo, Jolly, Mad, Spare Trousers." },
     hands = { "Two Pair", "Pair" },
@@ -134,7 +135,7 @@ A.LIST = {
     deck = function(p) return rank_concentration(p), nil end,
     target = function(p) return { ranks = p.top_rank and { [p.top_rank] = true } or nil } end },
 
-  { id = "fullhouse",
+  { id = "fullhouse", favoured = function(p) return (p.top_rank_n or 0) >= 6 end,
     name = { en = "Three of a Kind / Full House", pt = "Trinca e Full House" },
     desc = { en = "The Trio x3 + The Duo x2 both fire on a Full House.", pt = "The Trio x3 e The Duo x2 disparam juntos no Full House." },
     hands = { "Full House", "Three of a Kind" },
@@ -145,7 +146,7 @@ A.LIST = {
     deck = function(p) return rank_concentration(p), nil end,
     target = function(p) return { ranks = p.top_rank and { [p.top_rank] = true } or nil } end },
 
-  { id = "four",
+  { id = "four", favoured = function(p) return (p.top_rank_n or 0) >= 6 end,
     name = { en = "Four of a Kind", pt = "Quadra" },
     desc = { en = "The Family x4 (plus Trio and Duo); concentrate one rank.", pt = "The Family x4 (mais Trio e Duo); concentre um valor." },
     hands = { "Four of a Kind" },
@@ -199,7 +200,7 @@ A.LIST = {
     end,
     target = function() return { ranks = { [13] = true, [12] = true } } end },
 
-  { id = "even",
+  { id = "even", favoured = function(p) return share(p.evens, p.n) >= 1.4 * A.REF.evens end,
     name = { en = "Even ranks (Even Steven)", pt = "Números pares (Even Steven)" },
     desc = { en = "2/4/6/8/10: Even Steven +4 Mult each, Walkie Talkie on 10s and 4s.",
              pt = "2/4/6/8/10: Even Steven +4 Mult cada, Walkie Talkie nos 10 e 4." },
@@ -211,7 +212,7 @@ A.LIST = {
     deck = function(p) return need_count(p.evens, p.n, A.REF.evens, "build_reason_few_ranks") end,
     target = function() return { ranks = { [2] = true, [4] = true, [6] = true, [8] = true, [10] = true } } end },
 
-  { id = "odd_fib",
+  { id = "odd_fib", favoured = function(p) return share(p.fib, p.n) >= 1.4 * A.REF.fib end,
     name = { en = "Fibonacci / odd ranks", pt = "Fibonacci e ímpares" },
     desc = { en = "A/2/3/5/8 for Fibonacci +8 Mult; Odd Todd and Scholar on Aces.",
              pt = "A/2/3/5/8 para Fibonacci +8 Mult; Odd Todd e Scholar nos Ases." },
@@ -223,7 +224,7 @@ A.LIST = {
     deck = function(p) return need_count(p.fib + 0.5 * math.max(0, p.odds - p.fib), p.n, A.REF.fib, "build_reason_few_ranks") end,
     target = function() return { ranks = { [14] = true, [2] = true, [3] = true, [5] = true, [8] = true } } end },
 
-  { id = "hack_low",
+  { id = "hack_low", favoured = function(p) return share(low_count(p), p.n) >= 1.4 * A.REF.low end,
     name = { en = "Low cards (Hack + Wee Joker)", pt = "Cartas baixas (Hack + Wee Joker)" },
     desc = { en = "Hack retriggers 2-5; Wee Joker grows on every scored 2.",
              pt = "Hack repete 2 a 5; Wee Joker cresce a cada 2 pontuado." },
