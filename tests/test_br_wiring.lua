@@ -6,10 +6,9 @@
 
 return function(t)
   local saved = {}
-  for _, k in ipairs({ "G", "SMODS", "love", "localize", "create_toggle", "create_option_cycle",
-    "create_UIBox_generic_options", "create_UIBox_HUD", "UIBox", "lighten", "darken", "Node", "Moveable" }) do
-    saved[k] = rawget(_G, k)
-  end
+  local SAVED_KEYS = { "G", "SMODS", "love", "localize", "create_toggle", "create_option_cycle",
+    "create_UIBox_generic_options", "create_UIBox_HUD", "UIBox", "lighten", "darken", "Node", "Moveable" }
+  for _, k in ipairs(SAVED_KEYS) do saved[k] = rawget(_G, k) end
   local Log = require("util.log")
   local saved_level = Log.level
   local files = {}
@@ -160,7 +159,7 @@ return function(t)
     t.ok(BES.last and BES.last.shop, "wiring: the shop was evaluated")
   end)
   t.ok(ok, "EngineSim BR wiring smoke test ran without error: " .. tostring(err))
-  for k, v in pairs(saved) do _G[k] = v end
+  for _, k in ipairs(SAVED_KEYS) do _G[k] = saved[k] end   -- every key, so a global that was nil is cleared again
   Log.level = saved_level
   require("util.i18n").set_lang("en")
   for _, m in ipairs({ "ui.settings", "ui.hud_panel", "ui.build_menu", "ui.highlights" }) do package.loaded[m] = nil end

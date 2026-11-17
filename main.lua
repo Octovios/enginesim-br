@@ -266,12 +266,19 @@ function BES.panel_info(gs)
   if ok2 and Overlay.set_build then Overlay.set_build(bl) end
 end
 
--- the language (settings) + the game's names in it
-function BES.on_language(lang)
+-- the language (settings) + the game's names in it. The game's localization may not be loaded yet when the mod
+-- loads, so BES.tick retries the registration until it finds the names (BES.names_n).
+BES.names_n = 0
+function BES.register_names()
   if Extract and Extract.register_names and I18N then
     local ok, n = pcall(Extract.register_names, I18N)
-    if ok then Log.info(string.format("language %s: %d game names registered", tostring(lang), n or 0)) end
+    if ok then BES.names_n = n or 0 end
   end
+  return BES.names_n
+end
+function BES.on_language(lang)
+  BES.register_names()
+  Log.info(string.format("language %s: %d game names registered", tostring(lang), BES.names_n or 0))
   if BES.tracker then BES.tracker.reset() end
 end
 
@@ -1004,6 +1011,7 @@ function BES.tick()
   if not (Extract and BES.tracker) then return end
   local gs = Extract.snapshot()
   if not gs then return end
+  if (BES.names_n or 0) < 50 and I18N and I18N.lang ~= "en" then BES.register_names() end
   BES.decorate(gs)
   -- telemetry observes EVERY tick (before the change-gate) so it never misses an
   -- ante advance or a GAME_OVER; the recorder itself only acts at boundaries.
