@@ -243,6 +243,58 @@ return function(t)
     t.eq(#BA.menu_rows(st(nil)), #A.LIST, "menu: one row per build")
   end
 
+  -- ---- Negative jokers need no slot (live report: self-play sold a joker to fit a Negative one) -------------------
+  do
+    local SA = require("engine.shop_advisor")
+    local PO = require("engine.pack_open_advisor")
+    local deck = full_deck()
+    local board = {}
+    for i = 1, 5 do board[i] = GS.joker{ id = 100 + i, key = "j_joker", name = "Joker", position = i, sell_value = 1 } end
+    local function shop_gs(edition)
+      return GS.new{ deck = deck, jokers = board, economy = { dollars = 60, interest_cap = 5 },
+        meta = { ante = 3, round = 7, state = "SHOP", seed_hash = "N" },
+        run = { hand_levels = {}, hand_size = 8, joker_slots = 5, consumable_slots = 2, vouchers_owned = {}, tags = {} },
+        blind = { base_hands = 4, base_discards = 3, hands_left = 4, discards_left = 3 },
+        shop = { jokers = { GS.joker{ id = 900, key = "j_duo", name = "The Duo", cost = 8, edition = edition } },
+          consumables = {}, vouchers = {}, boosters = {}, reroll_cost = 5, joker_slots = 5 } }
+    end
+    t.ok(SA.needs_slot({ edition = nil }) and not SA.needs_slot({ edition = "negative" }), "negative: needs_slot rule")
+    local r = SA.recommend(shop_gs("negative"), {})
+    local all = { r.best }
+    for _, a in ipairs(r.alternatives or {}) do all[#all + 1] = a end
+    local buy, sell_for_it = nil, false
+    for _, a in ipairs(all) do
+      if a.type == "BUY_JOKER" and a.target and a.target.id == 900 then buy = a end
+      if (a.type == "SELL_JOKER" and a.swap_for and a.swap_for.id == 900)
+         or (a.type == "SELL_TO_BUY" and a.then_buy and a.then_buy.id == 900) then sell_for_it = true end
+    end
+    t.ok(buy ~= nil, "negative: a Negative joker is offered as a direct buy on a full board")
+    t.eq(buy and buy.need_jslot, false, "negative: and it needs no slot")
+    t.ok(not sell_for_it, "negative: no joker is sold to make room for it")
+    -- the same joker without the edition still needs a sale on a full board (the old behaviour is kept there)
+    local r2 = SA.recommend(shop_gs(nil), {})
+    local direct = false
+    for _, a in ipairs({ r2.best, table.unpack and table.unpack(r2.alternatives or {}) or nil }) do
+      if a and a.type == "BUY_JOKER" and a.target and a.target.id == 900 then direct = true end
+    end
+    for _, a in ipairs(r2.alternatives or {}) do
+      if a.type == "BUY_JOKER" and a.target and a.target.id == 900 then direct = true end
+    end
+    t.ok(not direct, "negative: a plain joker is never a direct buy on a full board")
+
+    -- packs: a Negative top pick is simply taken
+    local pgs = GS.new{ deck = deck, hand = {}, jokers = board, economy = { dollars = 10, interest_cap = 5 },
+      meta = { ante = 3, round = 7, state = "BUFFOON_PACK", seed_hash = "N" },
+      run = { hand_levels = {}, hand_size = 8, joker_slots = 5, consumable_slots = 2, vouchers_owned = {}, tags = {} },
+      blind = { base_hands = 4, base_discards = 3 },
+      pack = { picks_left = 1, items = { { set = "Joker", key = "j_duo", name = "The Duo",
+        joker = GS.joker{ id = 901, key = "j_duo", name = "The Duo", edition = "negative" } } } } }
+    local po = PO.recommend(pgs, { cheap = true })
+    t.ok(po and po.best and po.best.key == "j_duo", "negative pack: the Negative joker is the pick")
+    t.eq(po and po.sell, nil, "negative pack: nothing is sold to make room")
+    t.ok(po and not po.skip, "negative pack: the pack is not skipped for a full board")
+  end
+
   -- ---- language layer --------------------------------------------------------------------------------------------
   do
     I18N.set_lang("pt_BR")

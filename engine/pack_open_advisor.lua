@@ -340,10 +340,17 @@ end
 --   (b) no swap, but a non-joker pick FITS (a Tarot/Planet used on the spot) -> take THAT instead;
 --   (c) nothing fits -> SKIP, and say plainly why.
 -- The pack joker and owned jokers are valued in the SAME FV currency (econ + downside included).
+-- (EngineSim BR) a NEGATIVE joker brings its own slot: the game lets you take it onto a full board
+-- (G.FUNCS.can_select_card), so it never needs a sale and always "fits".
+local function slot_free_pick(pk)
+  return pk and pk.it and pk.it.set == "Joker" and pk.it.joker and pk.it.joker.edition == "negative"
+end
+
 local function full_board_pick(gs, valued, mopts, ordered, reason)
   local sell = nil
   local skip_full = false
   local jcap = (gs.run and gs.run.joker_slots) or 5
+  if slot_free_pick(ordered[1]) then return sell, skip_full, reason end   -- the top pick needs no room
   if #(gs.jokers or {}) >= jcap then
     -- best pack joker by FV (what you'd actually slot), not just use-order first.
     -- R12: over EVERY joker in the pack (`valued`), not just the chosen picks -- the pick ranking and this
@@ -352,7 +359,7 @@ local function full_board_pick(gs, valued, mopts, ordered, reason)
     local jpick, jpick_fv
     local picks = {}
     for _, pk in ipairs(valued) do
-      if pk.it.set == "Joker" and pk.it.joker then
+      if pk.it.set == "Joker" and pk.it.joker and not slot_free_pick(pk) then   -- a Negative needs no trade
         local fv = JokerWorth.of(gs, pk.it.joker, "add", mopts)
         picks[#picks + 1] = { pk = pk, fv = fv }
         if not jpick or fv > jpick_fv then jpick, jpick_fv = pk, fv end
@@ -439,7 +446,7 @@ local function full_board_pick(gs, valued, mopts, ordered, reason)
       local wtxt = wname and (" (" .. wname .. ")") or I18N.t(" (your board is all keepers)")
       local fit
       for _, pk in ipairs(ordered) do
-        if pk.it.set ~= "Joker" and pk.v and pk.v > 0 then fit = pk; break end
+        if (pk.it.set ~= "Joker" or slot_free_pick(pk)) and pk.v and pk.v > 0 then fit = pk; break end
       end
       if fit then
         for i, pk in ipairs(ordered) do if pk == fit then table.remove(ordered, i); break end end

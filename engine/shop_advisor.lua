@@ -475,6 +475,14 @@ end
 
 -- Synergy of a shop joker with the current board + deck. Returns a
 -- future-value-comparable bonus and a short note for the reasoning string.
+-- (EngineSim BR) A NEGATIVE joker brings its own slot (the game's check_for_buy_space adds 1 to the limit for it): it
+-- can be bought onto a FULL board, so it never needs a sale to make room. The original engine priced the extra slot
+-- (Eval.negative_slot_fv) but still gated the buy on a free slot -- on a full board it advised selling a joker first
+-- (live report 2026-11-17, self-play: "it sold a joker to fit a Negative one").
+function SA.needs_slot(sj)
+  return not (sj and sj.edition == "negative")
+end
+
 -- (EngineSim BR) "3 steel cards" / "3 cartas de Aço"
 local ENH_PT = { steel = "de Aço", glass = "de Vidro", gold = "de Ouro", lucky = "da Sorte", stone = "de Pedra",
                  mult = "Mult", bonus = "Bônus", wild = "Curinga" }
@@ -946,7 +954,7 @@ local function offer_joker(S, sj)
     or (down > 0 and I18N.t(" — but has a situational downside"))
     or (econ > 0 and I18N.f(" — +$%d/round", econ) or "")
   local entry = {
-    type = "BUY_JOKER", target = sj, cost = cost, value = value, need_jslot = true,
+    type = "BUY_JOKER", target = sj, cost = cost, value = value, need_jslot = SA.needs_slot(sj),
     name = sj.name or sj.key or "joker",
     reason = I18N.f("Buy %s ($%d) — adds ~%.0f%% of a boss hand%s.",
       sj.name or sj.key or "joker", cost, math.max(0, sgain) * 100, why),
@@ -961,7 +969,7 @@ local function offer_joker(S, sj)
   end
   priced[#priced + 1] = entry
   local leaves = dollars(gs) - cost
-  if ShopState.affordable(gs, cost, credit) and leaves >= reserve - credit and slots_free > 0 then
+  if ShopState.affordable(gs, cost, credit) and leaves >= reserve - credit and (slots_free > 0 or not SA.needs_slot(sj)) then
     S.best_offer = math.max(S.best_offer, sgain)
     actions[#actions + 1] = entry
   end
@@ -1321,7 +1329,7 @@ local function offer_joker_sale(S)
       local upgrade, up_name = 0, nil
       if slots_free <= 0 and shop then
         for _, sj in ipairs(shop.jokers or {}) do
-          if (dollars(gs) + cash - (sj.cost or 0)) >= reserve then
+          if SA.needs_slot(sj) and (dollars(gs) + cash - (sj.cost or 0)) >= reserve then
             -- A swap disrupts a working board NOW, so the replacement must pull its
             -- weight NOW -- not merely PROJECT to. An unfed scaler (Throwback/Fortune
             -- Teller) scores ~0 today yet projects huge; selling a contributing joker
@@ -1427,7 +1435,7 @@ local function offer_joker_sale(S)
           local keep = JokerWorth.keep_bar(ci, kb)
           local cash_i = jk.sell_value or 1
           for _, sj in ipairs(shop.jokers) do
-            if (dollars(gs) + cash_i - (sj.cost or 0)) >= reserve then
+            if SA.needs_slot(sj) and (dollars(gs) + cash_i - (sj.cost or 0)) >= reserve then
               local cur = JokerValue.score_delta(gs, sj, mopts)
               local sv = surv()
               local ok_s = not (sv and sv.unsafe(i, math.max(0, cur or 0) / sv.need))
@@ -1462,7 +1470,7 @@ local function offer_joker_sale(S)
           if not eternal and JokerWorth.trade_out_plain(jk.key) then
             local cash_i = jk.sell_value or 1
             for _, sj in ipairs(shop.jokers) do
-              if JokerWorth.trade_in_plain(sj.key) and (dollars(gs) + cash_i - (sj.cost or 0)) >= reserve then
+              if SA.needs_slot(sj) and JokerWorth.trade_in_plain(sj.key) and (dollars(gs) + cash_i - (sj.cost or 0)) >= reserve then
                 local up = JokerWorth.paired_trade_gain(gs, i, sj, rng)
                 if up then
                   if (not best_t or up > best_t.up) then
@@ -1876,7 +1884,7 @@ local function buy_before_reroll(S)
       local swap_ok = a.type == "SELL_JOKER" and a.swap_for and (a.value or 0) > 0
       and (dollars(gs) + (a.swap_cash or 0) - (a.swap_for.cost or 0) - rc) >= (reserve - credit)
     if swap_ok or ((a.type == "BUY_JOKER" or a.type == "BUY_CONSUMABLE") and (a.value or 0) > 0
-         and (a.type ~= "BUY_JOKER" or (slots_free or 0) >= 2)
+         and (a.type ~= "BUY_JOKER" or a.need_jslot == false or (slots_free or 0) >= 2)
          and (dollars(gs) - (a.cost or 0) - rc) >= (reserve - credit)) then
         if not pick or a.value > pick.value then pick, pick_idx = a, i end
       end
