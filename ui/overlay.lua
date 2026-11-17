@@ -2,8 +2,14 @@
 -- Owns the recommendation DISPLAY STATE: Overlay.set() turns the engine's RankedActionList into the
 -- strings and numbers the native HUD panel (ui/hud_panel.lua) and the in-world highlights read.
 -- Pure: no G, no love -- headless-testable.
+--
+-- EngineSim BR: every string goes through util/i18n (Portuguese by default in-game, English headless), with a final
+-- pass that swaps the game's internal English names for the names the player sees. The state also carries the
+-- itemised WHY (`details`), the next-best options like a chess engine's lines (`alts`), the run's stake/deck notes
+-- (`context`), the build plan (`build`) and an ordering instruction (`order_note`, e.g. Death's drag).
 
 local Cards = require("util.cards")
+local I18N = require("util.i18n")
 
 local Overlay = {}
 
@@ -16,6 +22,11 @@ Overlay.state = {
   winp     = "",
   reorder  = "",
   reason   = "Waiting for a decision.",
+  details  = nil,     -- list of strings: the itemised reasoning (skip / play breakdown, ...)
+  alts     = nil,     -- list of strings: the next-best options
+  context  = nil,     -- list of strings: stake / deck notes for this run (set by main.lua)
+  build    = nil,     -- list of strings: the build plan (set by main.lua)
+  order_note = nil,   -- an ordering instruction (Death: drag X to the left of Y)
   -- structured numbers for the panel's tags (nil = not applicable)
   cost = nil, banked = nil, conf_pct = nil, sim_backed = false,
   ev_pct = nil, ev_label = nil, win_pct = nil, run_pct = nil,
@@ -41,6 +52,7 @@ end
 Overlay.notice = nil           -- { text, until_t }
 function Overlay.notify(text, now, dur)
   Overlay.notice = { text = tostring(text), until_t = (now or 0) + (dur or 3) }
+  Overlay.state.version = (Overlay.state.version or 0) + 1
 end
 function Overlay.active_notice(now)
   local n = Overlay.notice
@@ -79,16 +91,49 @@ local VERB = {
   SKIP = "Skip", CONTINUE = "Play blind", PICK = "Take", BUY_CONSUMABLE = "Buy",
   USE_CONSUMABLE = "Use", SELL_TO_BUY = "Sell",
 }
+local VERB_PT = {
+  PLAY = "Jogar", DISCARD = "Descartar", BUY_JOKER = "Comprar", SELL_JOKER = "Vender",
+  BUY_VOUCHER = "Comprar", BUY_PACK = "Abrir", REROLL = "Reroll", SAVE = "Guardar $ (próxima rodada)",
+  SKIP = "Pular", CONTINUE = "Jogar o blind", PICK = "Pegar", BUY_CONSUMABLE = "Comprar",
+  USE_CONSUMABLE = "Usar", SELL_TO_BUY = "Vender",
+}
 local BUYS = { BUY_PACK = true, BUY_JOKER = true, BUY_CONSUMABLE = true, BUY_VOUCHER = true, SELL_TO_BUY = true }
 
--- 1234567 -> "1,234,567"; >= 10 million -> "12.3M" (keeps the panel tag short)
+function Overlay.verb(t)
+  if I18N.is_pt() then return VERB_PT[t] or VERB[t] or t end
+  return VERB[t] or t
+end
+
+-- the game's internal English names -> the player's language (identity in English)
+local function L(s) return I18N.localize_names(s) end
+
+-- 1234567 -> "1,234,567"; >= 10 million -> "12.3M" (keeps the panel tag short). Portuguese: "1.234.567" / "12,3M".
 function Overlay.fmt_num(n)
   n = math.floor((n or 0) + 0.5)
-  if n >= 1e7 then return string.format("%.1fM", n / 1e6) end
+  local pt = I18N.is_pt()
+  if n >= 1e7 then
+    local s = string.format("%.1fM", n / 1e6)
+    return pt and (s:gsub("%.", ",")) or s
+  end
   local s = tostring(n)
-  local out = s:reverse():gsub("(%d%d%d)", "%1,"):reverse()
-  return (out:gsub("^,", ""))
+  local out = s:reverse():gsub("(%d%d%d)", pt and "%1." or "%1,"):reverse()
+  return (out:gsub(pt and "^%." or "^,", ""))
 end
+
+-- One action as a short line ("Play KS KH (~1,240)" / "Buy Blueprint ($10)"), for the alternatives list.
+function Overlay.describe(a)
+  if type(a) ~= "table" or type(a.type) ~= "string" then return nil end
+  local verb = Overlay.verb(a.type)
+  local what = (a.cards and #a.cards > 0) and cards_str(a.cards)
+    or (a.target and (a.target.name or a.target.key)) or ""
+  local s = (what ~= "") and (verb .. " " .. what) or verb
+  if a.hand_type and (a.type == "PLAY") then s = s .. " [" .. I18N.hand(a.hand_type) .. "]" end
+  if a.type == "PLAY" and a.score then s = s .. " (~" .. Overlay.fmt_num(a.score) .. ")" end
+  if BUYS[a.type] and a.cost and a.cost > 0 then s = s .. " ($" .. a.cost .. ")" end
+  return L(s)
+end
+
+Overlay.ALTS_SHOWN = 3
 
 -- Populate display state from a RankedActionList (engine output). `gs` (optional) is the state it
 -- was decided on: for a PLAY it gives the chips still needed, so the panel can show the prediction.
@@ -99,15 +144,16 @@ function Overlay.set(ranked, gs)
   s.ev_pct, s.ev_label, s.win_pct, s.run_pct = nil, nil, nil, nil
   s.score_pred, s.score_need = nil, nil
   s.reorder = ""
+  s.details, s.alts, s.order_note = nil, nil, nil
   if not ranked or not ranked.best then
     Overlay.action = nil
     s.move, s.headline, s.conf, s.ev, s.winp = "-", "-", "", "", ""
-    s.reason = ranked and ranked.reason or "No recommendation."
+    s.reason = L(ranked and ranked.reason or (I18N.is_pt() and I18N.say("ui_no_rec") or "No recommendation."))
     return
   end
   local a = ranked.best
   Overlay.action = a
-  local verb = VERB[a.type] or a.type
+  local verb = Overlay.verb(a.type)
   local what = (a.cards and #a.cards > 0) and cards_str(a.cards)
     or (a.target and (a.target.name or a.target.key)) or ""
   local head = (what ~= "") and string.format("%s %s", verb, what) or verb
@@ -118,7 +164,8 @@ function Overlay.set(ranked, gs)
     if ok and P and P.size_label then
       local sz = P.size_label(a.target.key)          -- "Mega" / "Jumbo" / "Normal"
       local pick = (sz == "Mega") and 2 or 1
-      head = head .. string.format(" [%s, pick %d]", sz, pick)
+      head = head .. (I18N.is_pt() and string.format(" [%s, escolha %d]", sz, pick)
+        or string.format(" [%s, pick %d]", sz, pick))
     end
   end
   local cost_str = ""
@@ -128,9 +175,15 @@ function Overlay.set(ranked, gs)
   end
   -- The target ("on which cards") is the actionable part of using a Tarot, so it goes in the
   -- headline, not just the reason: "Use Empress — apply to AS, KS" instead of a bare "Use Empress".
-  local note = (a.target_note and a.target_note ~= "") and (" — " .. a.target_note) or ""
-  s.headline = head .. note
-  s.move = head .. cost_str .. note
+  local note = (a.target_note and a.target_note ~= "") and (" — " .. I18N.t(a.target_note)) or ""
+  s.headline = L(head .. note)
+  s.move = L(head .. cost_str .. note)
+  -- Death: the drag instruction gets its own highlighted line in the popup (EngineSim BR)
+  local oh = a.order_hint
+  if oh and oh.kind == "death" then
+    s.order_note = L(I18N.say("death_rule") .. (oh.swap and (" " .. I18N.say("death_drag", oh.target_label or "?",
+      oh.source_label or "?") .. ".") or ""))
+  end
   -- Be honest about what "confidence" means: a calibrated probability (from the
   -- simulation) vs a heuristic preference strength. Likewise only call the
   -- number "EV" when it is sim-backed; a heuristic ratio is shown as "Edge".
@@ -138,29 +191,35 @@ function Overlay.set(ranked, gs)
   local sim_backed = (basis == "win_probability" or basis == "draw_probability")
   s.sim_backed = sim_backed
   s.conf_pct = pct(a.confidence)
-  s.conf = string.format("Confidence: %d%%%s", s.conf_pct, sim_backed and " (sim)" or " (heuristic)")
-  s.ev_label = sim_backed and "EV" or "Edge"
+  if I18N.is_pt() then
+    s.conf = string.format("Confiança: %d%%%s", s.conf_pct, sim_backed and " (simulada)" or " (heurística)")
+    s.ev_label = sim_backed and "VE" or "Vantagem"
+  else
+    s.conf = string.format("Confidence: %d%%%s", s.conf_pct, sim_backed and " (sim)" or " (heuristic)")
+    s.ev_label = sim_backed and "EV" or "Edge"
+  end
   s.ev_pct = pct(a.expected_value)
   s.ev = string.format("%s: %+d%%", s.ev_label, s.ev_pct)
   if a.banked_money and a.banked_money > 0 then
     s.banked = a.banked_money
-    s.ev = s.ev .. string.format("   Banks $%d", a.banked_money)
+    s.ev = s.ev .. string.format(I18N.is_pt() and "   Guarda $%d" or "   Banks $%d", a.banked_money)
   end
   if a.win_probability ~= nil then
     s.win_pct, s.run_pct = pct(a.win_probability), pct(a.run_strength)
-    s.winp = string.format("Win: %d%%   Run: %d%%", s.win_pct, s.run_pct)
+    s.winp = string.format(I18N.is_pt() and "Vencer: %d%%   Run: %d%%" or "Win: %d%%   Run: %d%%", s.win_pct, s.run_pct)
   else
     s.winp = ""
   end
   if a.reorder then -- decision_engine only sets this when a reorder is worth it
     local o, parts = a.reorder, {}
-    if o.joker_changed then parts[#parts + 1] = "jokers " .. jokers_str(o.joker_order) end
-    if o.card_changed then parts[#parts + 1] = "cards " .. cards_str(o.card_order) end
+    local pt = I18N.is_pt()
+    if o.joker_changed then parts[#parts + 1] = (pt and "coringas " or "jokers ") .. jokers_str(o.joker_order) end
+    if o.card_changed then parts[#parts + 1] = (pt and "cartas " or "cards ") .. cards_str(o.card_order) end
     local tail
     if o.objective == "money" then tail = string.format(" (+$%g)", o.money_gain)
     elseif o.gain and o.gain > 0 then tail = string.format(" (+%d)", o.gain)
-    else tail = " (safer)" end
-    s.reorder = "Reorder: " .. table.concat(parts, ", ") .. tail
+    else tail = pt and " (mais seguro)" or " (safer)" end
+    s.reorder = L((pt and "Reordene: " or "Reorder: ") .. table.concat(parts, ", ") .. tail)
   end
   -- predicted score of this play vs the chips still needed this blind (the engine's expected score)
   local b = gs and gs.blind
@@ -168,7 +227,52 @@ function Overlay.set(ranked, gs)
     local need = math.max(0, (b.target_chips or 0) - (b.chips_scored or 0))
     if need > 0 then s.score_pred, s.score_need = a.score, need end
   end
-  s.reason = a.reason or ""
+  s.reason = L(I18N.t(a.reason or ""))
+  if type(a.details) == "table" and #a.details > 0 then
+    s.details = {}
+    for i, d in ipairs(a.details) do s.details[i] = L(d) end
+  end
+  -- the next-best options (a chess engine's other lines)
+  if type(ranked.alternatives) == "table" and #ranked.alternatives > 0 then
+    local alts, seen = {}, { [s.headline] = true }
+    for _, alt in ipairs(ranked.alternatives) do
+      if #alts >= Overlay.ALTS_SHOWN then break end
+      local line = Overlay.describe(alt)
+      if line and not seen[line] then seen[line] = true; alts[#alts + 1] = line end
+    end
+    if #alts > 0 then s.alts = alts end
+  end
+end
+
+-- Context lines (stake / deck notes) and the build plan: set by main.lua, shown in the popup.
+local function localized(lines)
+  if type(lines) ~= "table" or #lines == 0 then return nil end
+  local out = {}
+  for i, l in ipairs(lines) do out[i] = L(l) end
+  return out
+end
+
+function Overlay.set_context(lines)
+  local s = Overlay.state
+  local new = localized(lines)
+  local old = s.context
+  local same = (old == nil and new == nil)
+  if old and new and #old == #new then
+    same = true
+    for i = 1, #new do if old[i] ~= new[i] then same = false end end
+  end
+  if not same then s.context = new; s.version = (s.version or 0) + 1 end
+end
+function Overlay.set_build(lines)
+  local s = Overlay.state
+  local new = localized(lines)
+  local old = s.build
+  local same = (old == nil and new == nil)
+  if old and new and #old == #new then
+    same = true
+    for i = 1, #new do if old[i] ~= new[i] then same = false end end
+  end
+  if not same then s.build = new; s.version = (s.version or 0) + 1 end
 end
 
 function Overlay.set_thinking(on, now)
@@ -186,7 +290,7 @@ end
 
 -- Replace only the reason line (a transient status such as "Evaluating pack…").
 function Overlay.set_reason(text)
-  Overlay.state.reason = text or ""
+  Overlay.state.reason = L(I18N.t(text or ""))
   Overlay.state.version = (Overlay.state.version or 0) + 1
 end
 

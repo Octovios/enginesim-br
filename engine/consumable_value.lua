@@ -1192,8 +1192,14 @@ function CV.card_value(gs, set, key, freq, need, rng, samples, hand_ctx)
   -- Zeroing unconditionally here would delete the Fool before that search ever ran.
   if key == "c_fool" and not gs.pack and not CV.fool_target(gs) then return 0, 0 end
   if set == "Planet" then return planet_value(gs, key, freq, need, rng, hand_ctx)
-  elseif set == "Tarot" then return tarot_value(gs, key, need, rng, samples)
-  elseif set == "Spectral" then return spectral_value(gs, key, need, rng, samples)
+  elseif set == "Tarot" or set == "Spectral" then
+    local v, a, b = (set == "Tarot" and tarot_value or spectral_value)(gs, key, need, rng, samples)
+    -- (EngineSim BR) a forced build favours the cards that shape the deck toward it (engine/build_advisor)
+    if gs.run and gs.run.forced_build and type(v) == "number" then
+      local okb, BA = pcall(require, "engine.build_advisor")
+      if okb and BA then v = v + BA.consumable_bonus(gs, key) end
+    end
+    return v, a, b
   end
   return 0.1, 0, "card"
 end

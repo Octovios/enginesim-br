@@ -1458,7 +1458,7 @@ local function mid_need(gs, mid)
   if not hands or hands <= 0 then hands = 4 end
   local lo = math.max(1, math.min(8, math.floor(mid)))
   local hi = math.min(8, lo + 1)
-  local a, b = Mechanics.blind_requirement(lo, "Boss"), Mechanics.blind_requirement(hi, "Boss")
+  local a, b = Mechanics.blind_requirement(lo, "Boss", nil, gs), Mechanics.blind_requirement(hi, "Boss", nil, gs)
   return math.max(1, (a + (mid - lo) * (b - a)) / hands)
 end
 

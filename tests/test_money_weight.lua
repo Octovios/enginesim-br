@@ -39,7 +39,7 @@ return function(t)
   t.ok(poor and rich, "skip advice is given")
   if poor and rich then
     t.eq(rich.play_value - poor.play_value, 5, "playing is credited the interest the skip forgoes ($25 -> $5)")
-    t.ok(rich.reason:find("interest") ~= nil, "... and says so")
+    t.ok(table.concat(rich.details or {}, "\n"):find("interest") ~= nil, "... and says so (the breakdown)")
   end
 
   -- a copier on an EMPTY board is worth the joker it will copy (a friend's live runs: rerolled past Blueprint)

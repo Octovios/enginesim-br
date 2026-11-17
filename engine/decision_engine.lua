@@ -29,6 +29,7 @@ local Eval = require("engine.eval_function")
 local DeckPlan = require("engine.deck_plan")
 local Cards = require("util.cards")
 local BossEffect = require("engine.boss_effect")
+local RunContext = require("engine.run_context")   -- (EngineSim BR) Green Deck: $2 per unused hand
 
 local DE = {}
 
@@ -304,6 +305,10 @@ end
 -- We pick the planet with the biggest THIS-TURN boost first (immediate benefit), then the rest.
 local function planet_use(gs, base_ev, remaining, held, gs2)
   if not held or #held == 0 or not base_ev then return nil end
+  -- (EngineSim BR) Observatory: a HELD planet gives x1.5 to its hand every time it is played (now modelled in
+  -- HandEval.observatory_xmult), so using it trades a permanent x1.5 for one level. Keep holding -- the shop advisor
+  -- already never offers to use a held planet with Observatory.
+  if HandEval.has_observatory(gs) then return nil end
   local credit = Mechanics.boss_per_hand_need(gs) * DE.LEVEL_USE_CREDIT
   local best_p, best_boost, best_cards, best_ht
   for _, p in ipairs(held) do
@@ -776,7 +781,7 @@ local function milk_play(P)
       -- NET milk gain = extra $ farmed MINUS the round-end reward on the hands milking burns
       -- (each unused hand pays Mechanics.HAND_REWARD). survive_after reports E[banked hands] so the
       -- milk only wins when the $ it cycles beats the hand-rewards it forgoes.
-      local hand_cost = ((vc.banked or 0) - (vm.banked or 0)) * Mechanics.HAND_REWARD
+      local hand_cost = ((vc.banked or 0) - (vm.banked or 0)) * RunContext.hand_money(gs)
       -- the survival rollout's money is PLAYED-only, so credit the held-money advantage of the milk
       -- play directly: the extra E[$] its held cards earn THIS hand over the clear's (Parking/gold).
       local hold_delta = milk_money(mcards, mev) - (mev.money or 0)
@@ -938,7 +943,7 @@ local function arbitrate(P)
   local play_cards, hand, hands_left, remaining = P.play_cards, P.hand, P.hands_left, P.remaining
   local forced_play, play_scores_zero, mouth_lock = P.forced_play, P.play_scores_zero, P.mouth_lock
   local gs_eval, rng = P.gs_eval, P.rng
-  local HAND_ECON = Mechanics.HAND_REWARD * Heuristics.DOLLAR_VALUE
+  local HAND_ECON = RunContext.hand_money(gs) * Heuristics.DOLLAR_VALUE
   local function greedy_choice()
     -- + defer_uplift: digging out the discards preserves the option to play at 0 discards, where a
     -- held Mystic Summit (etc.) makes the scoring play far bigger. 0 for an ordinary board.
@@ -1143,7 +1148,7 @@ local function farm_choice(P, best, candidates)
         vn = vn or Simulation.survive_after(gs, first_n, DE.FARM_SAMPLES, lcg(seed), false)
         local fa = (st.kind == "DISCARD") and { kind = "DISCARD", cards = st.cards } or { kind = "PLAY", sel = st.sel }
         local vf = Simulation.survive_after(gs, fa, DE.FARM_SAMPLES, lcg(seed), { farm = true, reserve = r })
-        local net = (vf.money or 0) - (vn.money or 0) - ((vn.banked or 0) - (vf.banked or 0)) * Mechanics.HAND_REWARD
+        local net = (vf.money or 0) - (vn.money or 0) - ((vn.banked or 0) - (vf.banked or 0)) * RunContext.hand_money(gs)
         if Flags.global("BES_FARM_DEBUG") then io.stderr:write(string.format("FARM r%d %s vf.clear %.2f vn.clear %.2f vf$ %.1f vn$ %.1f banked %.1f/%.1f net %.1f hl %d dl %d rem %d\n",
           r, st.kind, vf.clear, vn.clear, vf.money or 0, vn.money or 0, vf.banked or 0, vn.banked or 0, net, hands_left, discards_left, remaining)) end
         if vf.clear >= vn.clear - DE.FARM_TOL and net > DE.FARM_MARGIN and (not pick or net > pick.net) then

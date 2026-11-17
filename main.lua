@@ -76,6 +76,11 @@ local Json      = try_require("util.json")
 -- Step 2-B (methodology-shift-2026-08): emit a replay FIXTURE at each shop/pack decision so the
 -- human's runs can be replayed under the current engine for the per-decision agreement objective.
 local ReplayFixture = try_require("core.replay_fixture")
+-- EngineSim BR
+local I18N = try_require("util.i18n")
+local BuildAdvisor = try_require("engine.build_advisor")     -- builds: suggestions, forced build
+local Archetypes = try_require("engine.archetypes")
+local BuildMenu = try_require("ui.build_menu")               -- F3: choose a build to force
 
 -- Monte-Carlo sample count per evaluation. Higher = smoother probabilities but
 -- more cost; the signature gate means this only runs when state changes.
@@ -181,11 +186,100 @@ function BES.run_state_for(gs)
   return DecisionState.carry(gs, BES._carried, BES.last)
 end
 
+-- ---- EngineSim BR: the run's forced build and the jokers seen in its shops ---------------------------------------
+-- The FORCED BUILD is per run (keyed by the seed): chosen in the F3 menu, or the settings' "build to force at run
+-- start" for a new run. The choice is saved in the mod config, so continuing a saved run keeps it.
+BES.forced = { seed = nil, id = nil }
+function BES.forced_id(gs)
+  local seed = gs and gs.meta and gs.meta.seed_hash or ""
+  if seed == "" then return nil end
+  if BES.forced.seed ~= seed then
+    local cfg = Settings and Settings.cfg
+    local saved = cfg and cfg.run_build
+    local id
+    if type(saved) == "table" and saved.seed == seed then id = saved.id
+    elseif cfg and cfg.default_build and cfg.default_build ~= "auto" then id = cfg.default_build end
+    if id and not (Archetypes and Archetypes.get(id)) then id = nil end
+    BES.forced = { seed = seed, id = id }
+  end
+  return BES.forced.id
+end
+
+function BES.set_forced(id)
+  local seed = BES.forced.seed
+  if BES.last and BES.last.gs and BES.last.gs.meta and BES.last.gs.meta.seed_hash then seed = BES.last.gs.meta.seed_hash end
+  BES.forced = { seed = seed, id = id }
+  if Settings and Settings.cfg then
+    Settings.cfg.run_build = { seed = seed, id = id }
+    if Settings.save then Settings.save() end
+  end
+  local arch = id and Archetypes and Archetypes.get(id)
+  if Overlay and Overlay.notify and I18N then
+    local now = (love and love.timer and love.timer.getTime and love.timer.getTime()) or 0
+    Overlay.notify(arch and I18N.say("build_set_notice", Archetypes.name(arch, I18N.lang)) or I18N.say("build_auto_notice"), now, 4)
+  end
+  if BES.tracker then BES.tracker.reset() end      -- re-evaluate with the new build
+  Log.info("forced build: " .. tostring(id or "auto"))
+end
+
+-- Jokers SEEN in this run's shops and packs (build suggestions weigh them). Saved to the LÖVE save folder so a
+-- continued run keeps its history.
+BES_SEENLOG = "enginesim_br_seen.json"
+BES.seen = { seed = nil, keys = {} }
+function BES.record_seen(gs)
+  local seed = gs.meta and gs.meta.seed_hash or ""
+  if seed == "" then return end
+  if BES.seen.seed ~= seed then
+    BES.seen = { seed = seed, keys = {} }
+    if Json and love and love.filesystem and love.filesystem.getInfo and love.filesystem.getInfo(BES_SEENLOG) then
+      local ok, data = pcall(function() return Json.decode(love.filesystem.read(BES_SEENLOG)) end)
+      if ok and type(data) == "table" and data.seed == seed and type(data.keys) == "table" then BES.seen.keys = data.keys end
+    end
+  end
+  local ante = math.floor((gs.meta and gs.meta.ante) or 1)
+  local changed = false
+  local function see(key)
+    if key and not BES.seen.keys[key] then BES.seen.keys[key] = { ante = ante }; changed = true end
+  end
+  for _, j in ipairs((gs.shop and gs.shop.jokers) or {}) do see(j.key) end
+  for _, it in ipairs((gs.pack and gs.pack.items) or {}) do if it.set == "Joker" then see(it.key) end end
+  if changed and Json and love and love.filesystem then
+    pcall(love.filesystem.write, BES_SEENLOG, Json.encode({ seed = seed, keys = BES.seen.keys }))
+  end
+end
+
+-- Put the player's build choice and the seen-joker history on a snapshot, before any advisor reads it.
+function BES.decorate(gs)
+  if not (gs and gs.run) then return gs end
+  pcall(BES.record_seen, gs)
+  gs.run.forced_build = BES.forced_id(gs)
+  if BES.seen.seed and BES.seen.seed == (gs.meta and gs.meta.seed_hash) then gs.run.seen_jokers = BES.seen.keys end
+  return gs
+end
+
+-- The popup's "this run" (stake / deck) and build lines, refreshed on every state change (cheap).
+function BES.panel_info(gs)
+  if not (BuildAdvisor and Overlay and gs) then return end
+  local ok1, ctx = pcall(BuildAdvisor.context_lines, gs)
+  if ok1 and Overlay.set_context then Overlay.set_context(ctx) end
+  local ok2, bl = pcall(BuildAdvisor.summary_lines, gs)
+  if ok2 and Overlay.set_build then Overlay.set_build(bl) end
+end
+
+-- the language (settings) + the game's names in it
+function BES.on_language(lang)
+  if Extract and Extract.register_names and I18N then
+    local ok, n = pcall(Extract.register_names, I18N)
+    if ok then Log.info(string.format("language %s: %d game names registered", tostring(lang), n or 0)) end
+  end
+  if BES.tracker then BES.tracker.reset() end
+end
+
 function BES.evaluate(with_sim, gs)
   if not (Extract and Decision) then return end
-  gs = gs or Extract.snapshot()   -- caller may pass an already-built snapshot (C4)
+  gs = gs or BES.decorate(Extract.snapshot())   -- caller may pass an already-built snapshot (C4)
   if not gs then
-    if Overlay then Overlay.set({ best = nil, reason = "No game state." }) end
+    if Overlay then Overlay.set({ best = nil, reason = I18N and I18N.say("ui_no_state") or "No game state." }) end
     return
   end
   pcall(BES.warn_uncovered, gs)
@@ -252,7 +346,7 @@ function BES.evaluate(with_sim, gs)
     else
       Log.error("shop advisor failed:", ranked)
       -- surface the failure instead of falling through to a stale blind action
-      if Overlay then Overlay.set({ best = nil, reason = "Shop eval error: " .. tostring(ranked) }) end
+      if Overlay then Overlay.set({ best = nil, reason = (I18N and I18N.say("ui_shop_error", tostring(ranked))) or ("Shop eval error: " .. tostring(ranked)) }) end
       return
     end
   end
@@ -261,7 +355,7 @@ function BES.evaluate(with_sim, gs)
   -- than leave the previous blind's play showing -- that "stale" look is what
   -- reads as the advisor being an action behind.
   if #gs.hand == 0 then
-    if Overlay then Overlay.set({ best = nil, reason = "Waiting for the next hand…" }) end
+    if Overlay then Overlay.set({ best = nil, reason = I18N and I18N.say("ui_waiting_hand") or "Waiting for the next hand…" }) end
     return
   end
 
@@ -295,7 +389,7 @@ function BES.evaluate(with_sim, gs)
   if not ok then
     Log.error(string.format("decide failed: %s  [heap before=%.0f MB after=%.0f MB]",
       tostring(ranked), heap_before / 1024, heap_after / 1024))
-    if Overlay then Overlay.set({ best = nil, reason = "Eval error: " .. tostring(ranked) }) end
+    if Overlay then Overlay.set({ best = nil, reason = (I18N and I18N.say("ui_eval_error", tostring(ranked))) or ("Eval error: " .. tostring(ranked)) }) end
     return
   end
   BES.last = { gs = gs, ranked = ranked, sim = sim }
@@ -423,9 +517,9 @@ function BES.apply_pack(gs, po, provisional)
   -- then the measured pass skipped the pack -- the first line was only the instant provisional estimate)
   if Overlay then
     if BES.last.provisional then
-      Overlay.set({ best = { type = "Evaluating pack…" },
-        reason = "Measuring each pick against your deck — the choice appears when it is decided." })
-      Overlay.set_reason("Measuring each pick against your deck — the choice appears when it is decided.")
+      local msg = I18N and I18N.say("ui_pack_eval_tip") or "Measuring each pick against your deck — the choice appears when it is decided."
+      Overlay.set({ best = { type = I18N and I18N.say("ui_pack_eval") or "Evaluating pack…" }, reason = msg })
+      Overlay.set_reason(msg)
     else
       Overlay.set({ best = action })
     end
@@ -494,6 +588,7 @@ end
 -- moment it is ready -- "Thinking" ends there unless it is only a provisional pack estimate), then the
 -- refinement. A newer state replaces the job, so a stale answer is never published.
 function BES.begin_eval(gs, sig)
+  pcall(BES.panel_info, gs)
   BES.think_begin(decision_kind(gs))
   BES.start_job(gs, sig,
     function()
@@ -760,7 +855,7 @@ function BES.flag(ring, suffix)
   end
   Log.info(string.format("FLAGGED %s: saved the last %d decision(s) to %s", flag_id, #lines, BES_FLAGLOG))
   if Overlay and Overlay.notify and not suffix then
-    Overlay.notify(string.format("Flagged (%d)", #lines), clock(), 4)
+    Overlay.notify(I18N and I18N.say("ui_flagged", #lines) or string.format("Flagged (%d)", #lines), clock(), 4)
   end
   return #lines
 end
@@ -909,6 +1004,7 @@ function BES.tick()
   if not (Extract and BES.tracker) then return end
   local gs = Extract.snapshot()
   if not gs then return end
+  BES.decorate(gs)
   -- telemetry observes EVERY tick (before the change-gate) so it never misses an
   -- ante advance or a GAME_OVER; the recorder itself only acts at boundaries.
   BES.observe(gs)
@@ -1068,7 +1164,45 @@ if _G.G and _G.SMODS then
     Log.on_error = function(msg) Overlay.add_error(msg, clock(), os.date("%H:%M")) end
   end
   -- settings page in the Mods menu (SMODS loaded config.lua + the saved values into current_mod.config)
-  if Settings then pcall(Settings.install, SMODS.current_mod) end
+  if Settings then
+    pcall(Settings.install, SMODS.current_mod)
+    Settings.game_lang_fn = Extract and Extract.game_language or nil
+    Settings.builds_fn = function()
+      local out = {}
+      for _, a in ipairs((Archetypes and Archetypes.LIST) or {}) do out[#out + 1] = { id = a.id, name = Archetypes.name(a, I18N and I18N.lang) } end
+      return out
+    end
+    -- the language now, so the first panel is already in it (S.apply keeps it in step afterwards)
+    if I18N and Settings.language then I18N.set_lang(Settings.language()); pcall(BES.on_language, I18N.lang) end
+  end
+  -- (EngineSim BR) the build menu: F3 in a run sets this run's build; outside a run it sets the default for new runs
+  if BuildMenu then
+    BuildMenu.install()
+    BuildMenu.rows_fn = function()
+      local gs = BES.last and BES.last.gs
+      if gs and BuildAdvisor and Extract.in_run and Extract.in_run() then
+        local ok, rows = pcall(BuildAdvisor.menu_rows, gs)
+        if ok then return rows end
+      end
+      local out = {}
+      for _, a in ipairs((Archetypes and Archetypes.LIST) or {}) do
+        out[#out + 1] = { id = a.id, name = Archetypes.name(a, I18N and I18N.lang) }
+      end
+      return out
+    end
+    BuildMenu.current_fn = function()
+      if Extract.in_run and Extract.in_run() then return BES.forced.id end
+      local d = Settings and Settings.cfg and Settings.cfg.default_build
+      return (d and d ~= "auto") and d or nil
+    end
+    BuildMenu.on_pick = function(id)
+      if Extract.in_run and Extract.in_run() then BES.set_forced(id)
+      elseif Settings and Settings.cfg then
+        Settings.cfg.default_build = id or "auto"
+        if Settings.save then Settings.save() end
+      end
+    end
+  end
   if FastMode then
     FastMode.autoplay = Autoplay
     if HUDPanel then HUDPanel.fast = FastMode end                        -- tooltip says when fast mode is on
@@ -1079,6 +1213,7 @@ if _G.G and _G.SMODS then
   if love then
     local prev = love.keypressed
     function love.keypressed(key, ...)
+      if key == "f3" and BuildMenu then pcall(BuildMenu.open) end   -- (EngineSim BR) choose a build to force
       if key == "f7" then Log.info("--- joker ability dump ---"); pcall(BES.dump_jokers) end
       if key == "f8" then Log.info("--- manual evaluation (with sim) ---"); BES.evaluate(true) end
       if key == "f9" then   -- the panel setting (also in the Mods menu); applied next frame
@@ -1127,7 +1262,8 @@ if _G.G and _G.SMODS then
       -- so the expensive Monte-Carlo / pack measurement never blocks rendering.
       if FastMode and not FastMode.installed then pcall(FastMode.ensure) end   -- Handy may load after this mod
       if Settings then
-        pcall(Settings.apply, { overlay = Overlay, highlights = Highlights, fast = FastMode, scheduler = BES })
+        pcall(Settings.apply, { overlay = Overlay, highlights = Highlights, fast = FastMode, scheduler = BES,
+          skip = SkipAdvisor, on_language = BES.on_language })
       end
       local s0 = clock()
       pcall(BES.pump_job, BES.job and BES.slice_budget() or BES_BUDGET_BUSY)
@@ -1165,7 +1301,7 @@ if _G.G and _G.SMODS then
   end
 
   BES.telemetry_instance()  -- create the run log up front so its path is logged on load
-  Log.info("Balatro Engine Sim loaded. F5 = flag a misplay, F7 = dump jokers, F8 = evaluate, F9 = toggle overlay, "
+  Log.info("Engine Sim BR loaded. F3 = build menu, F5 = flag a misplay, F7 = dump jokers, F8 = evaluate, F9 = toggle overlay, "
     .. "F10 = capture-only toggle, F11 = AUTO-PLAY toggle (blind PLAY/DISCARD)."
     .. "  CAPTURE-ONLY is " .. (BES.capture_only and "ON (data-collection: no lag, logs decisions to "
       .. BES_FIXLOG .. "; press F10 for live recommendations)" or "OFF")

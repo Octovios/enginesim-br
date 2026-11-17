@@ -159,7 +159,7 @@ local function boss_short(gs, ante, hands, avg, opts)
     end
     bavg = JokerValue.avg_score(bgs, { samples = opts.samples or P.SAMPLES, rng = opts.rng }) or avg
   end
-  return bavg * bh < Mechanics.blind_requirement(ante, "Boss", eff.mult)
+  return bavg * bh < Mechanics.blind_requirement(ante, "Boss", eff.mult, gs)
 end
 
 -- pace(gs, opts) -> assessment, or nil if capacity can't be measured (no deck).
@@ -184,10 +184,10 @@ function P.pace(gs, opts)
   local fail
   for a = ante, P.TARGET_ANTE do
     local proj = cap * (g ^ (a - ante))
-    if proj < Mechanics.blind_requirement(a, "Boss") then fail = a; break end
+    if proj < Mechanics.blind_requirement(a, "Boss", nil, gs) then fail = a; break end
   end
 
-  local req8 = Mechanics.blind_requirement(P.TARGET_ANTE, "Boss")
+  local req8 = Mechanics.blind_requirement(P.TARGET_ANTE, "Boss", nil, gs)
   local proj8 = cap * (g ^ math.max(0, P.TARGET_ANTE - ante))
   local on_pace = (fail == nil)
   local margin = proj8 / math.max(1, req8)

@@ -20,6 +20,7 @@
 
 local Overlay = require("ui.overlay")
 local Log = require("util.log")
+local I18N = require("util.i18n")
 
 local Panel = {}
 Panel.installed = false
@@ -31,6 +32,7 @@ local OPTIONS_ID = "bes_options_button"
 local MIN_BTN_H  = 1.2        -- the Run Info / Options buttons are 1.75 tall in the base game
 local TIP_W      = 6.0        -- tooltip text width (game units)
 local TIP_SCALE  = 0.32
+Panel.MAX_DETAIL_LINES = 14   -- (EngineSim BR) cap on the itemised-reason lines in the popup
 
 -- ---- text helpers -------------------------------------------------------------------------------
 
@@ -135,8 +137,8 @@ function Panel.tags()
     add(tag("~" .. Overlay.fmt_num(st.score_pred) .. " / " .. Overlay.fmt_num(st.score_need),
       st.score_pred >= st.score_need and G.C.GREEN or G.C.RED))
   end
-  if st.conf_pct then add(tag(string.format("Conf %d%%", st.conf_pct), conf_colour(st.conf_pct))) end
-  if st.win_pct then add(tag(string.format("Win %d%%", st.win_pct), G.C.BLUE)) end
+  if st.conf_pct then add(tag(I18N.say("ui_conf", st.conf_pct), conf_colour(st.conf_pct))) end
+  if st.win_pct then add(tag(I18N.say("ui_win", st.win_pct), G.C.BLUE)) end
   if st.cost then add(tag(string.format("$%d", st.cost), G.C.MONEY))
   elseif st.banked then add(tag(string.format("+$%d", st.banked), G.C.MONEY)) end
   return out
@@ -144,7 +146,7 @@ end
 
 -- "Engine", plus a red "!" while an engine error is recent (details in the hover popup).
 function Panel.label_row()
-  local nodes = { text("Engine", 0.42) }
+  local nodes = { text(I18N.say("ui_engine"), 0.42) }
   if #Overlay.recent_errors(Panel.now()) > 0 then
     nodes[#nodes + 1] = { n = G.UIT.B, config = { w = 0.06, h = 0.1 } }
     nodes[#nodes + 1] = tag("!", G.C.RED, 0.32)
@@ -163,8 +165,8 @@ function Panel.content(compact, tight)
   local has_move = st.headline and st.headline ~= "" and st.headline ~= "-"
   -- no move yet: show the status line ("Waiting for the next hand…") greyed in the headline slot.
   -- Thinking: say so, with the progress bar under it (owner 2026-10-04: the greyed PREVIOUS move read as the answer).
-  local head = has_move and st.headline or clip(st.reason ~= "" and st.reason or "No recommendation.", 44)
-  if think then head = "Working it out..." end
+  local head = has_move and st.headline or clip(st.reason ~= "" and st.reason or I18N.say("ui_no_rec"), 44)
+  if think then head = I18N.say("ui_working") end
   local tags = think and {} or Panel.tags()
   local note = Overlay.active_notice(Panel.now())
   if note then   -- a confirmation (F5 flag) leads the tag row
@@ -185,9 +187,9 @@ function Panel.content(compact, tight)
   elseif #tags > 0 then
     body[#body + 1] = { n = G.UIT.R, config = { align = "cm", maxw = 3.2, padding = 0.03 }, nodes = tags }
   end
-  local mode, mode_col = "Advice", G.C.UI.TEXT_LIGHT
-  if think then mode, mode_col = "Thinking", pulse_colour()
-  elseif auto then mode, mode_col = "Auto", G.C.GREEN end
+  local mode, mode_col = I18N.say("ui_advice"), G.C.UI.TEXT_LIGHT
+  if think then mode, mode_col = I18N.say("ui_thinking"), pulse_colour()
+  elseif auto then mode, mode_col = I18N.say("ui_auto"), G.C.GREEN end
   if compact then
     -- one line (a short screen, see Panel.fit): mode word (+ the error "!"), then the move with its tags inline
     local label = { text(mode, 0.34, mode_col) }
@@ -239,37 +241,56 @@ function Panel.tooltip()
     end
   end
   if thinking() then
-    para("Working out the best move for what's on screen now - wait for it before acting.", G.C.FILTER)
+    para(I18N.say("ui_wait_tip"), G.C.FILTER)
   end
+  -- (EngineSim BR) an ordering instruction first (Death: drag the target LEFT of the source)
+  if st.order_note then para(st.order_note, G.C.RED) end
   para(st.reason)
   if st.score_pred and st.score_need then
     local clears = st.score_pred >= st.score_need
-    para(string.format("Predicted score ~%s, %s still needed: %s.", Overlay.fmt_num(st.score_pred),
-      Overlay.fmt_num(st.score_need), clears and "clears the blind" or "falls short"),
+    para(I18N.say("ui_pred", Overlay.fmt_num(st.score_pred),
+      Overlay.fmt_num(st.score_need), clears and I18N.say("ui_clears") or I18N.say("ui_short")),
       clears and G.C.GREEN or G.C.RED)
   end
   para(st.reorder, G.C.FILTER)
+  -- the itemised WHY (skip / play breakdown, ...)
+  for i, d in ipairs(st.details or {}) do
+    if i > Panel.MAX_DETAIL_LINES then break end
+    para(d, (i == 1 or d:sub(1, 1) ~= " ") and G.C.UI.TEXT_DARK or G.C.UI.TEXT_INACTIVE)
+  end
+  -- the next-best options, like a chess engine's other lines
+  if st.alts and #st.alts > 0 then
+    para(I18N.say("ui_alternatives"), G.C.BLUE)
+    for i, a in ipairs(st.alts) do para(i .. ". " .. a, G.C.UI.TEXT_INACTIVE) end
+  end
+  -- the build plan (suggested / forced)
+  for i, b in ipairs(st.build or {}) do para(b, i == 1 and G.C.PURPLE or G.C.UI.TEXT_INACTIVE) end
+  -- what the stake and deck change in this run
+  if st.context and #st.context > 0 then
+    para(I18N.say("ui_context"), G.C.FILTER)
+    for _, c in ipairs(st.context) do para(c, G.C.UI.TEXT_INACTIVE) end
+  end
   local stats = {}
   for _, s in ipairs({ st.conf, st.ev, st.winp }) do if s and s ~= "" then stats[#stats + 1] = s end end
   if #stats > 0 then para(table.concat(stats, "   "), G.C.BLUE) end
   if Panel.fast and Panel.fast.engaged and Panel.fast.engaged() then
-    para("Fast mode: animations are skipped while self-play runs.", G.C.GREEN)
+    para(I18N.say("ui_fast"), G.C.GREEN)
   end
   local errs = Overlay.recent_errors(Panel.now())
   if #errs > 0 then
-    para("Engine errors (full text in the Lovely log):", G.C.RED)
+    para(I18N.say("ui_errors"), G.C.RED)
     for i = #errs, 1, -1 do para(errs[i].clock .. " " .. clip(errs[i].msg, 140), G.C.RED) end
   end
-  if #lines == 0 then para("No recommendation yet.") end
+  if #lines == 0 then para(I18N.say("ui_no_rec_yet")) end
 
   local function badge(label, on)
     return { n = G.UIT.C, config = { align = "cm", r = 0.1, padding = 0.06, minw = 2.2, emboss = 0.05,
         colour = on and G.C.GREEN or G.C.UI.BACKGROUND_INACTIVE }, nodes = {
-      text(label .. (on and ": ON" or ": OFF"), 0.3, on and G.C.WHITE or G.C.UI.TEXT_LIGHT),
+      text(label .. ": " .. (on and I18N.say("ui_on") or I18N.say("ui_off")), 0.3, on and G.C.WHITE or G.C.UI.TEXT_LIGHT),
     } }
   end
   local ap = Panel.autoplay
-  local title = (st.move and st.move ~= "-" and st.move) or "Engine advice"
+  local title = (st.move and st.move ~= "-" and st.move) or I18N.say("ui_title")
   return { n = G.UIT.ROOT, config = { align = "cm", colour = G.C.CLEAR }, nodes = {
     { n = G.UIT.R, config = { align = "cm", colour = lighten(G.C.JOKER_GREY, 0.5), r = 0.1, padding = 0.05, emboss = 0.05 }, nodes = {
       { n = G.UIT.R, config = { align = "cm", colour = darken(G.C.BLACK, 0.1), r = 0.1, padding = 0.07 }, nodes = {
@@ -279,12 +300,12 @@ function Panel.tooltip()
           { n = G.UIT.C, config = { align = "cl" }, nodes = lines },
         } },
         { n = G.UIT.R, config = { align = "cm", padding = 0.05 }, nodes = {
-          badge("Self-play", ap and ap.enabled),
+          badge(I18N.say("ui_selfplay"), ap and ap.enabled),
           { n = G.UIT.B, config = { w = 0.1, h = 0.1 } },
-          badge("Auto-restart", ap and ap.auto_restart),
+          badge(I18N.say("ui_restart"), ap and ap.auto_restart),
         } },
         { n = G.UIT.R, config = { align = "cm" }, nodes = {
-          text("F11 self-play   F6 auto-restart   F9 hide", 0.26, G.C.UI.TEXT_INACTIVE),
+          text(I18N.say("ui_keys"), 0.26, G.C.UI.TEXT_INACTIVE),
         } },
       } },
     } },
@@ -368,7 +389,7 @@ end
 
 -- Content-based, so the periodic re-set of IDENTICAL advice never recalculates the HUD.
 local SIG_FIELDS = { "headline", "move", "reason", "reorder", "conf", "ev", "winp", "cost", "banked", "conf_pct", "win_pct",
-  "score_pred", "score_need" }
+  "score_pred", "score_need", "order_note", "version" }
 local function signature()
   local ap, st = Panel.autoplay, Overlay.state
   local parts = { tostring(Overlay.visible), tostring(ap and ap.enabled), tostring(ap and ap.auto_restart),

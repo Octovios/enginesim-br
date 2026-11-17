@@ -23,6 +23,92 @@ function Extract.next_blind_of(st)
   return (not done(st.Small) and "Small") or (not done(st.Big) and "Big") or (not done(st.Boss) and "Boss") or "Small"
 end
 
+-- ---- (EngineSim BR) localized names ---------------------------------------------------------------------------
+-- The engine's advice names cards by `name`. The game's own `ability.name` is the INTERNAL English name ("Death",
+-- "Green Joker"), so a Portuguese player read "Use Death" for "A Morte". Ask the game's localization for the name it
+-- shows (G.localization via localize{type = "name_text"}); fall back to the internal name. Cached per key + language.
+local loc_cache, loc_lang = {}, nil
+local function loc_name(set, key, fallback)
+  if not key then return fallback end
+  local G = _G.G
+  local lang = G and G.SETTINGS and G.SETTINGS.language or "?"
+  if lang ~= loc_lang then loc_cache, loc_lang = {}, lang end
+  local ck = tostring(set) .. "|" .. key
+  local hit = loc_cache[ck]
+  if hit ~= nil then return hit or fallback end
+  local out = false
+  if type(_G.localize) == "function" then
+    local tries = { set }
+    if set == "Booster" then tries = { "Other", "Booster" } end
+    for _, st in ipairs(tries) do
+      local k = key
+      if set == "Booster" and st == "Other" then k = key:gsub("_%d+$", "") end
+      local ok, s = pcall(_G.localize, { type = "name_text", set = st, key = k })
+      if ok and type(s) == "string" and s ~= "" and not s:find("ERROR") then out = s; break end
+    end
+  end
+  loc_cache[ck] = out
+  return out or fallback
+end
+Extract.loc_name = loc_name
+
+-- The run's rules that the STAKE and the DECK change (engine/run_context reads these). -- VERIFY field paths
+-- (game: Game:start_run applies the stake's modifiers; Back:apply_to_run the deck's; Blind:set_blind zeroes the
+-- reward of a blind in G.GAME.modifiers.no_blind_reward).
+local function read_run_rules(G, GAME, resets)
+  local mods = GAME.modifiers or {}
+  local sp = GAME.starting_params or {}
+  local out = {}
+  out.stake = tonumber(GAME.stake) or 1
+  local skey
+  if _G.SMODS and type(_G.SMODS.stake_from_index) == "function" then
+    local ok, k = pcall(_G.SMODS.stake_from_index, out.stake)
+    if ok and type(k) == "string" then skey = k end
+  end
+  if not skey then
+    local pool = G.P_CENTER_POOLS and G.P_CENTER_POOLS.Stake
+    local sc = pool and pool[out.stake]
+    skey = sc and sc.key or nil
+  end
+  out.stake_key = skey
+  out.stake_name = skey and loc_name("Stake", skey, nil) or nil
+  out.scaling = tonumber(mods.scaling) or 1
+  out.ante_scaling = tonumber(sp.ante_scaling) or 1
+  if type(mods.no_blind_reward) == "table" then
+    out.no_blind_reward = {}
+    for k, v in pairs(mods.no_blind_reward) do if v then out.no_blind_reward[k] = true end end
+  else
+    out.no_blind_reward = {}
+  end
+  out.no_interest = mods.no_interest and true or false
+  out.money_per_hand = tonumber(mods.money_per_hand) or 1
+  out.money_per_discard = tonumber(mods.money_per_discard) or 0
+  out.no_extra_hand_money = mods.no_extra_hand_money and true or nil
+  out.interest_amount = tonumber(GAME.interest_amount) or 1
+  out.eternals = mods.enable_eternals_in_shop and true or false
+  out.perishables = mods.enable_perishables_in_shop and true or false
+  out.rentals = mods.enable_rentals_in_shop and true or false
+  out.no_faces = sp.no_faces and true or nil
+  out.erratic = sp.erratic_suits_and_ranks and true or nil
+  out.skips = tonumber(GAME.skips) or 0
+  local back = GAME.selected_back
+  local center = back and back.effect and back.effect.center
+  out.deck_key = (center and center.key) or nil
+  out.deck_name = out.deck_key and loc_name("Back", out.deck_key, back and back.name) or (back and back.name)
+  out.balance_scoring = (out.deck_key == "b_plasma") or (back and back.name == "Plasma Deck") or false
+  -- the money each blind of this ante pays when beaten, after the stake
+  local rewards = {}
+  for _, t in ipairs({ "Small", "Big", "Boss" }) do
+    local bk = resets.blind_choices and resets.blind_choices[t]
+    local bl = bk and G.P_BLINDS and G.P_BLINDS[bk]
+    if bl and type(bl.dollars) == "number" then
+      rewards[t] = out.no_blind_reward[t] and 0 or bl.dollars
+    end
+  end
+  out.blind_rewards = rewards
+  return out
+end
+
 local function read_card(c)
   if not c then return nil end
   local base = c.base or {}
@@ -83,7 +169,7 @@ local function read_joker(c, idx)
   return GS.joker{
     id         = c.sort_id or c.unique_val,
     key        = key,  -- "j_blueprint"
-    name       = ab.name,
+    name       = loc_name("Joker", key, ab.name),   -- display name in the game's language (EngineSim BR)
     position   = idx,
     edition    = c.edition and c.edition.type,
     ability    = ab,
@@ -111,7 +197,8 @@ local function read_consumable(c)
     id  = c.sort_id or c.unique_val,
     key = center and center.key,
     set = center and center.set,                        -- "Tarot"/"Planet"/"Spectral"
-    name = c.ability and c.ability.name,
+    name = loc_name(center and center.set, center and center.key, c.ability and c.ability.name),
+    edition = c.edition and c.edition.type,             -- Perkeo's Negative copies are free to use
   }
 end
 
@@ -201,7 +288,8 @@ function Extract.snapshot()
     for _, c in ipairs(G.pack_cards.cards) do
       local center = c.config and c.config.center
       local set = c.ability and c.ability.set
-      local item = { set = set, key = center and center.key, name = c.ability and c.ability.name }
+      local item = { set = set, key = center and center.key,
+        name = loc_name(set, center and center.key, c.ability and c.ability.name) }
       if set == "Joker" then item.joker = read_joker(c)
       elseif set ~= "Tarot" and set ~= "Planet" and set ~= "Spectral" then
         item.card = read_card(c)   -- standard pack: a playing card
@@ -216,9 +304,10 @@ function Extract.snapshot()
   -- the assistant thinks you're shopping forever and stops evaluating blinds.
   -- read a shop "center" item (voucher / booster) as { key, name, cost }
   local function read_center(c)
+    local center = c.config and c.config.center
     return {
-      key = c.config and c.config.center and c.config.center.key,
-      name = c.ability and c.ability.name,
+      key = center and center.key,
+      name = loc_name(center and center.set, center and center.key, c.ability and c.ability.name),
       cost = c.cost,
     }
   end
@@ -258,6 +347,8 @@ function Extract.snapshot()
     }
   end
 
+  local rules = read_run_rules(G, GAME, resets)
+
   return GS.new{
     meta = {
       ante = resets.ante,
@@ -294,8 +385,10 @@ function Extract.snapshot()
       blind_type = GAME.blind_on_deck,       -- "Small"|"Big"|"Boss"  -- VERIFY
       next_blind = next_blind,               -- the blind the next select offers (in the shop: the one after this)
       skip_tag = skip_tag,                    -- offered skip tag key  -- VERIFY
+      skip_tag_name = skip_tag and loc_name("Tag", skip_tag, nil) or nil,   -- (EngineSim BR) as the game shows it
       skip_tag_hand = skip_tag_hand,          -- the hand an Orbital tag would level (nil if unknown)
       boss_effect_key = blind.config and blind.config.blind and blind.config.blind.key,
+      reward = tonumber(blind.dollars),       -- what THIS blind pays when beaten (stake-adjusted by the game)
       played_hand_types = played_hand_types,  -- hand types played THIS blind (Mouth/Eye legality)
       hands_played_round = cur.hands_played,  -- hands played this round (first-hand lock, main.lua)  -- VERIFY field
       last_hand_played = GAME.last_hand_played, -- the most recent played hand type  -- VERIFY field
@@ -325,8 +418,75 @@ function Extract.snapshot()
       -- ante start and visible from blind select.  -- VERIFY field path
       boss_key = (resets.blind_choices and resets.blind_choices.Boss)
         or (GAME.round_resets and GAME.round_resets.blind_choices and GAME.round_resets.blind_choices.Boss),
+      -- (EngineSim BR) stake + deck rules: engine/run_context
+      stake = rules.stake, stake_key = rules.stake_key, stake_name = rules.stake_name,
+      scaling = rules.scaling, ante_scaling = rules.ante_scaling,
+      no_blind_reward = rules.no_blind_reward, blind_rewards = rules.blind_rewards,
+      no_interest = rules.no_interest, money_per_hand = rules.money_per_hand,
+      money_per_discard = rules.money_per_discard, no_extra_hand_money = rules.no_extra_hand_money,
+      interest_amount = rules.interest_amount,
+      eternals = rules.eternals, perishables = rules.perishables, rentals = rules.rentals,
+      no_faces = rules.no_faces, erratic = rules.erratic, skips = rules.skips,
+      deck_key = rules.deck_key, deck_name = rules.deck_name, balance_scoring = rules.balance_scoring,
     },
   }
+end
+
+-- (EngineSim BR) Teach util/i18n the game's names in the player's language: every joker, tarot, planet, spectral,
+-- voucher, booster, enhancement, edition, deck, stake, tag and blind (internal English name -> shown name), plus the
+-- poker hands and suits. The advice text is built with the internal names; util/i18n swaps them on the way to the
+-- panel. Returns how many names were registered (0 outside the game).
+function Extract.register_names(I18N)
+  local G = _G.G
+  if not (G and I18N and type(_G.localize) == "function") then return 0 end
+  local n = 0
+  local function reg(en, loc)
+    if type(en) == "string" and type(loc) == "string" and loc ~= "" and not loc:find("ERROR") then
+      I18N.register_name(en, loc); n = n + 1
+    end
+  end
+  local SETS = { Joker = true, Tarot = true, Planet = true, Spectral = true, Voucher = true, Booster = true,
+                 Enhanced = true, Edition = true, Back = true }
+  for key, c in pairs(G.P_CENTERS or {}) do
+    if type(c) == "table" and type(c.name) == "string" and SETS[c.set] then
+      -- "Mult" / "Bonus" (enhancements) and "Base" (edition) are also everyday scoring words ("+3 Mult"):
+      -- registering them would rewrite those words, so only the unambiguous "... Card" names go in
+      local ambiguous = (c.set == "Enhanced" and not c.name:find(" Card$")) or (c.set == "Edition" and c.name == "Base")
+      if not ambiguous and #c.name >= 3 then reg(c.name, loc_name(c.set, key, nil)) end
+    end
+  end
+  for key, t in pairs(G.P_TAGS or {}) do
+    if type(t) == "table" and t.name then reg(t.name, loc_name("Tag", key, nil)) end
+  end
+  for key, b in pairs(G.P_BLINDS or {}) do
+    if type(b) == "table" and b.name then reg(b.name, loc_name("Blind", key, nil)) end
+  end
+  for key, st in pairs(G.P_STAKES or {}) do
+    if type(st) == "table" and st.name then reg(st.name, loc_name("Stake", key, nil)) end
+  end
+  local hands = { "Flush Five", "Flush House", "Five of a Kind", "Straight Flush", "Four of a Kind", "Full House",
+                  "Flush", "Straight", "Three of a Kind", "Two Pair", "Pair", "High Card" }
+  for _, h in ipairs(hands) do
+    local ok, s = pcall(_G.localize, h, "poker_hands")
+    if ok then reg(h, s) end
+  end
+  for _, su in ipairs({ "Spades", "Hearts", "Clubs", "Diamonds" }) do
+    local ok, s = pcall(_G.localize, su, "suits_plural")
+    if ok then reg(su, s) end
+  end
+  return n
+end
+
+-- Is a run on screen (not the main menu)?
+function Extract.in_run()
+  local G = _G.G
+  return (G and G.STAGES and G.STAGE == G.STAGES.RUN) and true or false
+end
+
+-- The game's language code ("pt_BR", "en-us", ...), or nil outside the game.
+function Extract.game_language()
+  local G = _G.G
+  return G and G.SETTINGS and G.SETTINGS.language or nil
 end
 
 -- The WHOLE deck (G.playing_cards), wherever each card currently is. gs.deck is G.deck, the undrawn pile, which at

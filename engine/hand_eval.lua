@@ -452,6 +452,39 @@ function HandEval.score(gs, played)
   return HandEval.score_with(gs, played, effective, mods)
 end
 
+-- (EngineSim BR) Plasma Deck balancing: the deck key from state_extraction, or an explicit flag.
+function HandEval.balanced(gs)
+  local r = gs and gs.run
+  if not r then return false end
+  if r.balance_scoring ~= nil then return r.balance_scoring and true or false end
+  return r.deck_key == "b_plasma" or r.deck_back == "Plasma Deck"
+end
+
+-- (EngineSim BR) Observatory: x1.5 per held Planet whose hand is `ht`. 1 without the voucher.
+HandEval.PLANET_HAND = {
+  c_pluto = "High Card", c_mercury = "Pair", c_uranus = "Two Pair", c_venus = "Three of a Kind",
+  c_saturn = "Straight", c_jupiter = "Flush", c_earth = "Full House", c_mars = "Four of a Kind",
+  c_neptune = "Straight Flush", c_planet_x = "Five of a Kind", c_ceres = "Flush House", c_eris = "Flush Five",
+}
+HandEval.OBSERVATORY_X = 1.5
+function HandEval.has_observatory(gs)
+  local v = gs and gs.run and gs.run.vouchers_owned
+  if type(v) ~= "table" then return false end
+  if v.v_observatory then return true end                         -- live: a set { key = true }
+  for _, k in ipairs(v) do if k == "v_observatory" then return true end end   -- sim: a list
+  return false
+end
+function HandEval.observatory_xmult(gs, ht)
+  if not HandEval.has_observatory(gs) then return 1 end
+  local x = 1
+  for _, c in ipairs(gs.consumables or {}) do
+    if c.set == "Planet" and HandEval.PLANET_HAND[c.key] == ht and not c.debuffed then
+      x = x * HandEval.OBSERVATORY_X
+    end
+  end
+  return x
+end
+
 -- Score `played` with PRECOMPUTED effective jokers + mods (see HandEval.score).
 function HandEval.score_with(gs, played, effective, mods, pre_ht, pre_scoring, pre_contains)
   local ht, scoring, contains
@@ -592,6 +625,24 @@ function HandEval.score_with(gs, played, effective, mods, pre_ht, pre_scoring, p
     end
   end
 
+  -- 5. (EngineSim BR) HELD PLANETS with the Observatory voucher: each Planet in the consumable tray gives x1.5
+  --    when its own hand is scored. Consumables score right after the jokers in the same pass (game:
+  --    G.FUNCS.evaluate_play iterates jokers then consumeables; Card:calculate_joker, set "Planet"). Unmodelled
+  --    before, so holding Saturn for your Straight looked worthless.
+  local obs = HandEval.observatory_xmult(gs, ht)
+  if obs > 1 then chips, mult = apply(st, chips, mult, { xmult = obs }, "observatory:", ht) end
+
+  -- 6. (EngineSim BR) PLASMA DECK: chips and mult are averaged at the final scoring step (game:
+  --    Back:trigger_effect 'final_scoring_step': both = floor((chips + mult) / 2)). With it, +Chips are worth as
+  --    much as +Mult, which changes which play is best.
+  local cmin_f, mmin_f = st.cmin, st.mmin
+  if HandEval.balanced(gs) then
+    local half = math.floor((chips + mult) / 2)
+    chips, mult = half, half
+    local hm = math.floor((cmin_f + mmin_f) / 2)
+    cmin_f, mmin_f = hm, hm
+  end
+
   local score = math.floor(chips * mult + 1e-9)
 
   return {
@@ -599,7 +650,7 @@ function HandEval.score_with(gs, played, effective, mods, pre_ht, pre_scoring, p
     chips = chips,
     mult = mult,
     score = score,
-    score_min = math.floor(st.cmin * st.mmin + 1e-9), -- guaranteed floor (no RNG upside)
+    score_min = math.floor(cmin_f * mmin_f + 1e-9), -- guaranteed floor (no RNG upside)
     approx = st.approx,        -- true if any RNG-expected value was used
     money = money,             -- retrigger-aware in-blind $ from scoring
     scoring_cards = scoring_cards,

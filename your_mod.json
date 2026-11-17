@@ -1,17 +1,21 @@
 {
-  "id": "balatroenginesim",
-  "name": "Balatro Engine Sim",
-  "display_name": "Engine Sim - Decision Assistant",
+  "id": "enginesim_br",
+  "name": "Engine Sim BR",
+  "display_name": "Engine Sim BR - Assistente de Decisão",
   "author": [
-    "Anto640"
+    "Anto640 (EngineSim original)",
+    "Engine Sim BR"
   ],
-  "description": "Recommends the best move in every situation (play, discard, shop, packs, skips) by measuring each option against your deck, and can play whole runs by itself (F11, auto-restart F6).",
-  "prefix": "bes",
+  "description": "Mostra a melhor jogada em cada situação (jogar, descartar, loja, pacotes, pular blinds) medindo cada opção contra o seu baralho, em português. Considera a ficha (stake), o baralho, os coringas vistos na loja e a build que você quiser forçar (F3). Fork do EngineSim de Anto640 (licença MIT).",
+  "prefix": "besbr",
   "main_file": "main.lua",
   "priority": 0,
-  "version": "0.6.1",
-  "badge_colour": "4F86C6",
+  "version": "0.7.0",
+  "badge_colour": "2E8B57",
   "dependencies": [
     "Steamodded (>=1.0.0~)"
+  ],
+  "conflicts": [
+    "balatroenginesim"
   ]
 }

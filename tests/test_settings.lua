@@ -9,7 +9,8 @@ return function(t)
     local S = require("ui.settings")
 
     -- a saved config with one value changed; missing keys get the defaults
-    local mod = { config = { fast_speed = 32 } }
+    -- English for the page assertions below (the in-game default is Portuguese -- EngineSim BR)
+    local mod = { config = { fast_speed = 32, language = "en" } }
     local cfg = S.init(mod)
     t.eq(cfg.fast_speed, 32, "saved value kept")
     t.eq(cfg.show_panel, true, "missing value -> default")
@@ -62,8 +63,26 @@ return function(t)
     t.eq(G.FUNCS.bes_cfg_fast_speed, S.on_speed, "speed callback registered")
     local page = mod.config_tab()
     t.ok(page and page.n == 7, "page is a UI root")
-    t.eq(table.concat(made, ","), "toggle:show_panel,toggle:show_tags,cycle:2:Balanced,toggle:fast_selfplay,cycle:1:x4",
-      "page: panel, tags, while-thinking (default Balanced), fast self-play, speed")
+    t.eq(table.concat(made, ","), "cycle:2:English,toggle:show_panel,toggle:show_tags,cycle:2:Balanced,"
+      .. "cycle:1:Analyse (recommended),cycle:1:Automatic,toggle:fast_selfplay,cycle:1:x4",
+      "page: language, panel, tags, while-thinking (default Balanced), skip policy, build, fast self-play, speed")
+    -- (EngineSim BR) the language setting reaches util/i18n; Portuguese labels the page in Portuguese
+    local I18N = require("util.i18n")
+    S.on_language({ to_key = 1 })
+    t.eq(cfg.language, "pt_BR", "language cycle sets Portuguese")
+    S.apply({})
+    t.eq(I18N.lang, "pt_BR", "the language reaches util/i18n")
+    made = {}
+    mod.config_tab()
+    t.ok(table.concat(made, ","):find("Equilibrado", 1, true) ~= nil, "Portuguese page labels")
+    S.on_language({ to_key = 2 }); S.apply({})
+    t.eq(I18N.lang, "en", "back to English for the rest of the suite")
+    S.on_skip_policy({ to_key = 3 })
+    local skip
+    skip = { POLICY = "auto", set_policy = function(p) skip.POLICY = p end }
+    S.apply({ skip = skip })
+    t.eq(skip.POLICY, "never", "the skip policy reaches the skip advisor")
+    S.on_skip_policy({ to_key = 1 }); S.apply({ skip = skip })
     S.on_think_mode({ to_key = 1 })
     t.eq(cfg.think_mode, "smooth", "while-thinking cycle sets the mode")
     local sched = {}
@@ -84,6 +103,7 @@ return function(t)
     package.loaded["ui.fast_mode"] = nil
   end)
   t.ok(ok, "settings suite ran without error: " .. tostring(err))
+  require("util.i18n").set_lang("en")
   _G.G, _G.create_toggle, _G.create_option_cycle = saved.G, saved.toggle, saved.cycle
   package.loaded["ui.settings"] = nil
 end

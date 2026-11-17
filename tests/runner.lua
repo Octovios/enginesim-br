@@ -83,6 +83,7 @@ local suites = {
   "tests.test_fast_mode",
   "tests.test_settings",
   "tests.test_loader",
+  "tests.test_br",          -- EngineSim BR additions
 }
 -- NOTE: the Phase-1 simulator integration suites (tests.test_world, tests.test_driver)
 -- drive the REAL engine per hand (Monte-Carlo) and take minutes, so they are NOT in the

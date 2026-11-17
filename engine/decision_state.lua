@@ -47,6 +47,17 @@ local function carry_plan(gs, mem, out)
   if not gs.run then return end
   local seed = (gs.meta and gs.meta.seed_hash) or ""
   local plan = (seed == mem.build_seed) and mem.build_plan or nil
+  -- (EngineSim BR) a FORCED build (the player's choice) commits the plan to its hand at once; switching back to
+  -- automatic drops that commitment and lets the plan re-derive.
+  local Archetypes = require("engine.archetypes")
+  local forced = gs.run.forced_build and Archetypes.get(gs.run.forced_build)
+  if forced then
+    local c = Archetypes.commitment(forced, (gs.meta and gs.meta.ante) or 1)
+    if c then out.plan_key, out.plan = seed, c; return end
+    if plan and plan.via == "user" then plan = nil end
+  elseif plan and plan.via == "user" then
+    plan = nil
+  end
   if gs.shop then
     local ok_bp, p = pcall(BuildPlan.advance, gs, plan)   -- pure: returns a new plan, never edits `plan`
     if ok_bp then plan = p end

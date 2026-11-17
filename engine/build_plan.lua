@@ -470,6 +470,18 @@ function BP.econ_runway(gs)
 end
 
 function BP.keep_bias(key, gs, fires)
+  -- (EngineSim BR) a forced build's pieces are protected from being sold (engine/build_advisor)
+  if gs and gs.run and gs.run.forced_build then
+    local okb, BA = pcall(require, "engine.build_advisor")
+    if okb and BA then
+      local kb = BA.keep_bias(gs, key, BP.CORE_KEEP)
+      if kb > 0 then return math.max(kb, BP.keep_bias_base(key, gs, fires)) end
+    end
+  end
+  return BP.keep_bias_base(key, gs, fires)
+end
+
+function BP.keep_bias_base(key, gs, fires)
   local c = gs and BP.anchored_commitment(gs)
   if c and c.kind == "hand" then
     for _, hand in ipairs(hand_tags(key)) do
@@ -633,6 +645,17 @@ function BP.fit(gs, sj, plan, invest)
         fit = fit + BP.COMMIT_JOKER_FILL * 0.5 * BP.econ_runway(gs)
         note = note or "supports the committed economy build"
       end
+    end
+  end
+
+  -- (EngineSim BR) THE BUILD: a forced build's core/support pieces (or, in auto mode, the leading build's once it has
+  -- started) -- engine/build_advisor. Assembling a SET is the engine's known weak spot (ROADMAP: "build assembly").
+  local okb, BA = pcall(require, "engine.build_advisor")
+  if okb and BA then
+    local bf, bnote = BA.joker_fit(gs, key)
+    if bf ~= 0 then
+      fit = fit + bf
+      note = bnote or note
     end
   end
 

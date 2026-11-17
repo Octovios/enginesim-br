@@ -9,6 +9,7 @@
 local Rng = require("util.rng")
 local Flags = require("engine.flags")
 local Cards = require("util.cards")
+local I18N = require("util.i18n")
 local HandEval = require("engine.hand_eval")
 local Mechanics = require("engine.mechanics")
 local JokerData = require("engine.joker_data")
@@ -524,8 +525,43 @@ local function disambig_label(c, pool)
 end
 T.disambig_label = disambig_label
 
+-- DEATH ORDER (EngineSim BR). The game converts every selected card but the RIGHTMOST one (screen position) into a
+-- copy of the rightmost. The hand sits sorted high -> low, so the card you want to change (a low card) is usually to
+-- the RIGHT of the card you copy (a high card): selecting both as they lie turns your King into a 3. The original
+-- mod knew the order (the self-player dragged the cards) but told a human only "apply to 3C, KS". death_info names
+-- which card becomes which and whether you must drag the target to the LEFT first. `pool` must be the hand in
+-- display order (gs.hand is: state_extraction reads G.hand.cards left -> right).
+-- -> { target = card, source = card, target_i, source_i, swap = bool, note = string } or nil
+function T.death_info(gs, pool)
+  pool = pool or (gs and gs.hand)
+  if not pool or #pool < 2 then return nil end
+  local lo, hi = T.death_pick(pool, gs)
+  if not lo then return nil end
+  local tgt, src = pool[lo], pool[hi]
+  local tl, sl = disambig_label(tgt, pool), disambig_label(src, pool)
+  local swap = lo > hi                       -- the target sits to the RIGHT of the source: drag it left first
+  local note = I18N.say("death_note", tl, sl)
+  if swap then note = note .. " - " .. I18N.say("death_drag", tl, sl)
+  else note = note .. " (" .. I18N.say("death_ok") .. ")" end
+  return { target = tgt, source = src, target_i = lo, source_i = hi, swap = swap, note = note,
+           target_label = tl, source_label = sl }
+end
+
+-- the machine-readable form the panel tags read: which hand card becomes which, and whether to drag first
+function T.order_hint(gs, key, pool)
+  if key ~= "c_death" then return nil end
+  local d = T.death_info(gs, pool)
+  if not d then return nil end
+  return { kind = "death", target_id = d.target.id, source_id = d.source.id, swap = d.swap or nil,
+           target_label = d.target_label, source_label = d.source_label }
+end
+
 function T.target_note(gs, key, pool)
   local name_pool = pool or ((gs.hand and #gs.hand > 0) and gs.hand or nil)
+  if key == "c_death" and name_pool then
+    local d = T.death_info(gs, name_pool)
+    if d then return d.note end
+  end
   if name_pool then
     local targets, suit = T.best_targets(gs, key, name_pool)
     if targets and #targets > 0 then
@@ -646,11 +682,12 @@ function T.best_use(gs, base_ev, remaining, dollar_value, filter)
             if tg and #tg > 0 then tcards = {}; for _, t in ipairs(tg) do tcards[#tcards + 1] = { id = t.id } end end
             -- Death converts the LEFT selected card into the RIGHT one: tcards is {target, source}, in that order
             local torder = (c.key == "c_death") or nil
+            local ohint = T.order_hint(gs, c.key, hand)
             local credit = card_tarot and need * T.CARD_PERM_CREDIT or 0
             consider({ type = "USE_CONSUMABLE", target = { name = name, key = c.key }, kind = (money > 0 and gain <= 0) and "income" or "score",
               play_cards = cards2, hand_type = ev2.hand_type, score = ev2.score, gain = money > 0 and money or nil,
               value = ev2.score + credit + money * dollar_value, permanence_credit = credit,
-              target_note = tn, target_cards = tcards, target_order = torder, use_keys = { c.key },
+              target_note = tn, target_cards = tcards, target_order = torder, order_hint = ohint, use_keys = { c.key },
               reason = (money > 0 and gain <= 0)
                 and string.format("Use %s%s — $3 each round it is held at round end (~$%d over the run).",
                   name, tn and (" (" .. tn .. ")") or "", math.floor(money + 0.5))

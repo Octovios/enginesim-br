@@ -476,7 +476,7 @@ function Sim.remaining_blinds(gs)
   local out = {}
   local function add(blind_type, eff)
     local mult = (blind_type == "Boss" and eff and eff.mult) or nil
-    out[#out + 1] = { target = Mechanics.blind_requirement(ante, blind_type, mult),
+    out[#out + 1] = { target = Mechanics.blind_requirement(ante, blind_type, mult, gs),
                       base_hands = base_hands, base_discards = base_discards,
                       eff = (blind_type == "Boss") and eff or nil }
   end

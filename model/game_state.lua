@@ -49,6 +49,7 @@ function GameState.consumable(t)
     key = t.key,
     set = t.set,                 -- "Tarot" | "Planet" | "Spectral"
     name = t.name,
+    edition = t.edition,         -- "negative" for Perkeo's copies (EngineSim BR: was never read live)
   }
 end
 

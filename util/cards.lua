@@ -3,6 +3,7 @@
 -- No dependency on G or love -> fully unit-testable headless.
 
 local Cards = {}
+local I18N = require("util.i18n")   -- (EngineSim BR) labels and names in the player's language
 
 -- Canonical rank ids. Face/Ace handled explicitly.
 --   2..10 -> 2..10, Jack=11, Queen=12, King=13, Ace=14
@@ -93,6 +94,11 @@ end
 local SUIT_GLYPH = { Spades = "S", Hearts = "H", Clubs = "C", Diamonds = "D" }
 local ID_LABEL = { [11] = "J", [12] = "Q", [13] = "K", [14] = "A" }
 function Cards.label(card)
+  if I18N.lang ~= "en" then
+    if Cards.is_stone(card) then return I18N.pick("Stone", "Pedra") end
+    local id = Cards.rank_id(card)
+    return (ID_LABEL[id] or tostring(id)) .. I18N.suit_letter(card.suit)
+  end
   if Cards.is_stone(card) then return "Stone" end
   local id = Cards.rank_id(card)
   local r = ID_LABEL[id] or tostring(id)
@@ -109,7 +115,26 @@ local ENH_WORD = { m_gold = "Gold", m_steel = "Steel", m_glass = "Glass", m_bonu
                    m_mult = "Mult", m_wild = "Wild", m_lucky = "Lucky" }
 local ED_WORD = { foil = "Foil", holo = "Holographic", holographic = "Holographic",
                   polychrome = "Polychrome", negative = "Negative" }
+local ENH_WORD_PT = { m_gold = "de Ouro", m_steel = "de Aço", m_glass = "de Vidro", m_bonus = "Bônus",
+                      m_mult = "Mult", m_wild = "Curinga", m_lucky = "da Sorte" }
+local ED_WORD_PT = { foil = "Laminada", holo = "Holográfica", holographic = "Holográfica",
+                     polychrome = "Policromática", negative = "Negativa" }
+local SEAL_PT = { Gold = "Selo Dourado", Red = "Selo Vermelho", Blue = "Selo Azul", Purple = "Selo Roxo" }
 function Cards.describe(card)
+  if I18N.lang ~= "en" then
+    if not card then return "carta" end
+    local name
+    if Cards.is_stone(card) then name = "Carta de Pedra"
+    else
+      name = I18N.card_name(Cards.rank_id(card), card.suit or "?")
+      local extra = {}
+      if card.enhancement and ENH_WORD_PT[card.enhancement] then extra[#extra + 1] = ENH_WORD_PT[card.enhancement] end
+      if card.edition and ED_WORD_PT[card.edition] then extra[#extra + 1] = ED_WORD_PT[card.edition] end
+      if #extra > 0 then name = name .. " (" .. table.concat(extra, ", ") .. ")" end
+    end
+    if card.seal then name = name .. " [" .. (SEAL_PT[card.seal] or tostring(card.seal)) .. "]" end
+    return name
+  end
   if not card then return "card" end
   local parts = {}
   if card.edition and ED_WORD[card.edition] then parts[#parts + 1] = ED_WORD[card.edition] end

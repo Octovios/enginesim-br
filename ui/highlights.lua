@@ -16,8 +16,15 @@
 -- so they draw AFTER the cards; each follows its target (major) and is removed when the target goes.
 -- All runtime work is pcall-guarded by the caller.
 
+local I18N = require("util.i18n")
+
 local H = {}
 H.autoplay = nil                 -- the ui/autoplay module (set by main.lua)
+
+-- (EngineSim BR) tag words in the player's language. English keeps the original words (tests read them).
+local WORDS_PT = { PLAY = "JOGAR", DISCARD = "DESCARTAR", USE = "USAR", TARGET = "ALVO", SELL = "VENDER",
+                   BUY = "COMPRAR", OPEN = "ABRIR", TAKE = "PEGAR", BEST = "MELHOR" }
+local function W(word) return (I18N.is_pt() and WORDS_PT[word]) or word end
 H.tags = {}                      -- target object -> { box, label }
 H.RESOLVE_EVERY = 0.2            -- seconds between target re-resolves
 
@@ -41,10 +48,22 @@ function H.plan(a)
       out[#out + 1] = { kind = "card", areas = areas, target = { id = target.id, key = target.key }, label = label, colour = colour }
     end
   end
-  local function targets(list)
-    for _, c in ipairs(list or {}) do card({ "hand" }, { id = c.id }, "TARGET", "PURPLE") end
+  -- Death (EngineSim BR): which card BECOMES the other, and a red "drag left" when the hand order is wrong
+  local function targets(list, hint)
+    for _, c in ipairs(list or {}) do
+      local label, colour = W("TARGET"), "PURPLE"
+      if hint and hint.kind == "death" then
+        if c.id == hint.target_id then
+          label = I18N.say("tag_becomes")
+          if hint.swap then label, colour = I18N.say("tag_drag_left") .. "\n" .. label, "RED" end
+        elseif c.id == hint.source_id then
+          label = I18N.say("tag_source")
+        end
+      end
+      card({ "hand" }, { id = c.id }, label, colour)
+    end
   end
-  local function button(names) out[#out + 1] = { kind = "button", names = names, label = "BEST", colour = "GOLD" } end
+  local function button(names) out[#out + 1] = { kind = "button", names = names, label = W("BEST"), colour = "GOLD" } end
 
   -- a recommended ORDER (jokers score left to right; some boards care about card order): number the
   -- items 1..n in the order to arrange them, instead of a text line
@@ -57,25 +76,25 @@ function H.plan(a)
       numbered({ "hand" }, ro.card_order, "BLUE")                  -- play these, in this order
     else
       for _, c in ipairs(a.cards or {}) do
-        if c.id ~= nil then card({ "hand" }, { id = c.id }, t, t == "PLAY" and "BLUE" or "RED") end
+        if c.id ~= nil then card({ "hand" }, { id = c.id }, W(t), t == "PLAY" and "BLUE" or "RED") end
       end
     end
     if t == "PLAY" and ro and ro.joker_changed then numbered({ "jokers" }, ro.joker_order, "GOLD") end
   elseif t == "USE_CONSUMABLE" then
-    card({ "consumeables" }, a.target, "USE", "RED")
-    targets(a.target_cards)
+    card({ "consumeables" }, a.target, W("USE"), "RED")
+    targets(a.target_cards, a.order_hint)
   elseif t == "SELL_JOKER" then
-    card(OWNED, a.target, "SELL", "GREEN")
+    card(OWNED, a.target, W("SELL"), "GREEN")
   elseif t == "SELL_TO_BUY" then
-    card(OWNED, a.target, "SELL", "GREEN")
-    card(SHOP, a.then_buy, "BUY", "ORANGE")
+    card(OWNED, a.target, W("SELL"), "GREEN")
+    card(SHOP, a.then_buy, W("BUY"), "ORANGE")
   elseif t == "BUY_PACK" then
-    card(SHOP, a.target, "OPEN", "ORANGE")
+    card(SHOP, a.target, W("OPEN"), "ORANGE")
   elseif t:find("^BUY") then
-    card(SHOP, a.target, "BUY", "ORANGE")
+    card(SHOP, a.target, W("BUY"), "ORANGE")
   elseif t == "PICK" then
-    card({ "pack_cards" }, a.target or a, "TAKE", "GREEN")
-    targets(a.target_cards)
+    card({ "pack_cards" }, a.target or a, W("TAKE"), "GREEN")
+    targets(a.target_cards, a.order_hint)
   elseif t == "REROLL" then button({ "reroll_shop" })
   elseif t == "SAVE" then button({ "toggle_shop" })                     -- "Next Round"
   elseif t == "SKIP" then button({ "skip_booster", "skip_blind" })
@@ -89,10 +108,16 @@ end
 -- ---- runtime ----------------------------------------------------------------------------------
 
 local function tag_box(major, label, colour, align)
+  -- a label may hold "\n": one row per line (Death's "<< DRAG" over "1 BECOMES")
+  local rows = {}
+  for ln in (tostring(label) .. "\n"):gmatch("(.-)\n") do
+    rows[#rows + 1] = { n = G.UIT.R, config = { align = "cm" }, nodes = {
+      { n = G.UIT.T, config = { text = ln, scale = 0.32, colour = G.C.WHITE, shadow = true } } } }
+  end
   local box = UIBox{
     definition = { n = G.UIT.ROOT, config = { align = "cm", colour = G.C.CLEAR }, nodes = {
       { n = G.UIT.R, config = { align = "cm", r = 0.1, padding = 0.05, colour = colour, emboss = 0.05, shadow = true }, nodes = {
-        { n = G.UIT.T, config = { text = label, scale = 0.32, colour = G.C.WHITE, shadow = true } },
+        { n = G.UIT.C, config = { align = "cm" }, nodes = rows },
       } },
     } },
     -- Strong bond: glued to where the target is DRAWN, so it rides along as a card slides or is dragged

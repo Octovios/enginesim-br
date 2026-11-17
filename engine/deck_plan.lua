@@ -83,6 +83,21 @@ function DP.target(gs)
 
   local domfrac = (n > 0) and (domn / n) or 0
   local t = { size = n, ideal_size = DP.IDEAL_SIZE }
+  -- (EngineSim BR) a FORCED build sets the target itself: its suit, its ranks or faces (engine/build_advisor)
+  if gs.run and gs.run.forced_build then
+    local okb, BA = pcall(require, "engine.build_advisor")
+    local ft, arch = nil, nil
+    if okb and BA then ft, arch = BA.deck_target(gs) end
+    if ft then
+      t.committed, t.forced = true, arch and arch.id
+      t.hand = arch and arch.hands and arch.hands[1] or nil
+      t.suit, t.ranks, t.face = ft.suit, ft.ranks, ft.face
+      t.archetype = (ft.suit and "flush") or (ft.face and "face") or "hand"
+      t.reason = "Forced build — shape the deck toward it."
+      t.want_thin = n > DP.IDEAL_SIZE
+      return t
+    end
+  end
   -- Play-derived plans are leveling-only and never reach here (BP.anchored_commitment):
   -- DP.target would thin toward a "dominant" suit that is an arbitrary tie-break on a
   -- near-flat deck, the exact path that measured -0.054 in WINRATE_V3_PLAN 5t.

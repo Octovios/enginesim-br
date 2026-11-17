@@ -11,6 +11,7 @@
 -- Advice.TYPES is the whole vocabulary a consumer has to handle.
 
 local Cards = require("util.cards")
+local I18N = require("util.i18n")
 
 local Advice = {}
 
@@ -38,7 +39,7 @@ function Advice.from_skip(sk, gs)
     return {
       type = sk.recommend == "SKIP" and "SKIP" or "CONTINUE",
       target = sk.recommend == "SKIP" and { name = sk.tag } or nil,
-      reason = sk.reason, confidence = 0.7,
+      reason = sk.reason, details = sk.details, confidence = 0.7,
       expected_value = (sk.tag_value - sk.play_value) / math.max(1, sk.play_value),
     }
   end
@@ -46,8 +47,8 @@ function Advice.from_skip(sk, gs)
   return {
     type = "CONTINUE", confidence = 0.7,
     reason = (btype == "Boss")
-      and "Play the blind — the boss can't be skipped."
-      or "Play the blind — no skip tag worth taking here.",
+      and I18N.say("play_blind_boss")
+      or I18N.say("play_blind_no_tag"),
   }
 end
 
@@ -102,6 +103,7 @@ function Advice.from_pack(po)
     target_note = po.target_note,          -- "apply to AS, KS" in the BIG line (#10)
     target_cards = po.target_cards,        -- machine-readable target hand-card ids (auto-play selects them)
     target_order = po.target_order,        -- Death: target_cards must sit left->right in the hand
+    order_hint = po.order_hint,            -- (EngineSim BR) Death: which card becomes which / drag first
     reason = po.reason, confidence = 0.75,
   }
 end

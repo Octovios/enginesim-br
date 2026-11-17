@@ -121,7 +121,7 @@ local function delayed_grat_income(gs)
   local hs = math.min((gs.run and gs.run.hand_size) or 8, #deck)
   local hands = (gs.blind and gs.blind.base_hands) or 4
   local d = (gs.blind and (gs.blind.base_discards or gs.blind.discards_left)) or 3
-  local need = Mechanics.blind_requirement(math.floor((gs.meta and gs.meta.ante) or 1), "Big")
+  local need = Mechanics.blind_requirement(math.floor((gs.meta and gs.meta.ante) or 1), "Big", nil, gs)
   local rng = Rng.stream(#deck * 104729 + 7919)
   local SAMPLES, ok = 8, 0
   for _ = 1, SAMPLES do

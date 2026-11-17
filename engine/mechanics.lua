@@ -14,13 +14,23 @@ M.BLIND_MULT = { Small = 1.0, Big = 1.5, Boss = 2.0 }
 
 -- base (Small-blind, White stake) requirement, antes 1..8 (hardcoded in game)
 M.ANTE_BASE = { 300, 800, 2000, 5000, 11000, 20000, 35000, 50000 }
+-- EngineSim BR: the faster curves of the higher stakes (game: get_blind_amount, G.GAME.modifiers.scaling).
+-- scaling 2 = Green Stake and up, scaling 3 = Purple Stake and up. The original engine always used scaling 1,
+-- so on Green+ it under-read every future blind (pacing said "on pace" when the run was behind).
+M.ANTE_BASE_SCALED = {
+  [1] = M.ANTE_BASE,
+  [2] = { 300, 900, 2600, 8000, 20000, 36000, 60000, 100000 },
+  [3] = { 300, 1000, 3200, 9000, 25000, 60000, 110000, 200000 },
+}
 
--- Base requirement for any ante (White stake). Antes 9+ use the game formula.
-function M.ante_base(ante)
+-- Base requirement for any ante. `scaling` (1/2/3, default 1 = White stake) picks the stake curve; antes 9+ use
+-- the game formula on that curve's ante-8 value.
+function M.ante_base(ante, scaling)
   ante = math.floor(ante or 1)
+  local amounts = M.ANTE_BASE_SCALED[scaling or 1] or M.ANTE_BASE
   if ante <= 0 then return 100 end
-  if ante <= 8 then return M.ANTE_BASE[ante] end
-  local a = M.ANTE_BASE[8]
+  if ante <= 8 then return amounts[ante] end
+  local a = amounts[8]
   local k, b = 0.75, 1.6
   local c = ante - 8
   local d = 1 + 0.2 * (ante - 8)
@@ -31,12 +41,33 @@ function M.ante_base(ante)
   return amount
 end
 
+-- The stake curve / deck multiplier of a run, from a game state (or a plain { scaling =, ante_scaling = }).
+-- Absent fields -> White stake, x1 (the simulator and the old fixtures carry neither).
+function M.scaling_of(ctx)
+  if type(ctx) ~= "table" then return 1 end
+  local r = ctx.run or ctx
+  local s = tonumber(r.scaling)
+  if s and s >= 1 then return math.floor(s) end
+  local n = tonumber(r.stake)
+  if n then return (n >= 6 and 3) or (n >= 3 and 2) or 1 end
+  return 1
+end
+function M.ante_scaling_of(ctx)
+  if type(ctx) ~= "table" then return 1 end
+  local r = ctx.run or ctx
+  local a = tonumber(r.ante_scaling)
+  if a and a > 0 then return a end
+  if r.deck_key == "b_plasma" or r.deck_back == "Plasma Deck" then return 2 end
+  return 1
+end
+
 -- Chip requirement for an ante + blind type. `boss_mult` overrides the 2x for
--- special bosses (Wall 4x, Needle 1x, Violet Vessel 6x).
-function M.blind_requirement(ante, blind_type, boss_mult)
-  local base = M.ante_base(ante)
+-- special bosses (Wall 4x, Needle 1x, Violet Vessel 6x). `ctx` (optional): the game state, for the stake's
+-- curve and the deck's multiplier (Plasma Deck x2).
+function M.blind_requirement(ante, blind_type, boss_mult, ctx)
+  local base = M.ante_base(ante, M.scaling_of(ctx))
   local mult = (blind_type == "Boss" and (boss_mult or 2.0)) or M.BLIND_MULT[blind_type] or 1.0
-  return base * mult
+  return base * mult * M.ante_scaling_of(ctx)
 end
 
 -- ---- boss blinds ------------------------------------------------------------
@@ -93,7 +124,7 @@ function M.boss_per_hand_need(gs)
   local hands = (gs and gs.blind and gs.blind.base_hands)
     or (gs and gs.run and gs.run.base_hands)
   if not hands or hands <= 0 then hands = 4 end   -- white-stake default when unknown
-  return math.max(1, M.blind_requirement(ante, "Boss") / hands)
+  return math.max(1, M.blind_requirement(ante, "Boss", nil, gs) / hands)
 end
 
 -- ---- economy ----------------------------------------------------------------
