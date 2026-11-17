@@ -1,6 +1,6 @@
 """Build an r2modman / Thunderstore-format zip of the mod, for r2modman's "Import local mod" and for Thunderstore.
 
-  usage: python tools/package_r2.py            -> dist/Anto640-EngineSim-<version>.zip
+  usage: python tools/package_r2.py            -> dist/EngineSimBR-EngineSimBR-<version>.zip  (+ a manual-install zip)
 
 r2modman only lists mods recorded in its profile's mods.yml; a folder copied into the profile by hand loads in game
 but never shows in the manager. Importing this zip registers it (installed as mods/Anto640-EngineSim/). The zip holds
@@ -20,13 +20,12 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PACKAGING = os.path.join(ROOT, "packaging")
 MOD_DIRS = ["core", "engine", "model", "ui", "util"]
 MOD_FILES = ["main.lua", "your_mod.json", "config.lua"]
-AUTHOR, NAME = "Anto640", "EngineSim"
+AUTHOR, NAME = "EngineSimBR", "EngineSimBR"
 # Thunderstore "Owner-Name-Version" strings: the minimum versions this was tested on (the maintainer's r2modman
 # profile). Steamodded itself depends on lovely; listing both keeps the install explicit.
 DEPENDENCIES = ["Steamodded-Steamodded-26.1002.0", "Thunderstore-lovely-0.10.0"]
-DESCRIPTION = ("Recommends the best play, discard, shop and pack choice by measuring every option against your "
-               "deck, and can play whole runs by itself (F11). Wins ~41% of runs in its simulator (Red Deck, "
-               "White Stake). Single-player only.")
+DESCRIPTION = ("Assistente em PT-BR: mostra a melhor jogada (jogar, descartar, loja, pacotes, pular blinds) medindo "
+               "cada opção no seu baralho. Considera ficha, baralho e a build que você forçar (F3). Fork do EngineSim.")
 
 def png_bytes(img):
     b = BytesIO(); img.save(b, "PNG"); return b.getvalue()
@@ -63,7 +62,7 @@ def main():
     manifest = {
         "name": NAME,
         "version_number": version,
-        "website_url": "https://github.com/Anto640/balatro-engine-sim",
+        "website_url": "https://github.com/Anto640/balatro-engine-sim",   # the original project (MIT)
         "description": DESCRIPTION,
         "dependencies": DEPENDENCIES,
     }
@@ -80,6 +79,15 @@ def main():
             for f in tracked(d):
                 z.write(os.path.join(ROOT, f), f)
     print(out)
+    # (EngineSim BR) a plain zip for a manual install: one folder to drop into %AppData%/Balatro/Mods/
+    manual = os.path.join(ROOT, "dist", "EngineSimBR-%s-instalacao-manual.zip" % version)
+    with zipfile.ZipFile(manual, "w", zipfile.ZIP_DEFLATED) as z:
+        for f in MOD_FILES + ["LICENSE", "README.md"]:
+            z.write(os.path.join(ROOT, f), "EngineSimBR/" + f)
+        for d in MOD_DIRS:
+            for f in tracked(d):
+                z.write(os.path.join(ROOT, f), "EngineSimBR/" + f)
+    print(manual)
 
 if __name__ == "__main__":
     main()

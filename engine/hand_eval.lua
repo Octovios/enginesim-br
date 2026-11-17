@@ -485,6 +485,28 @@ function HandEval.observatory_xmult(gs, ht)
   return x
 end
 
+-- (EngineSim BR) The per-state scoring flags (Plasma balancing, Observatory multipliers by hand), worked out ONCE per
+-- game-state table: score_with runs for every subset of every sampled hand, so it must not re-scan the vouchers and
+-- the consumable tray each time. Weak keys: an entry dies with its state.
+local FLAG_CACHE = setmetatable({}, { __mode = "k" })
+local NO_OBS = {}
+local function gs_flags(gs)
+  local f = FLAG_CACHE[gs]
+  if f then return f end
+  f = { balanced = HandEval.balanced(gs), obs = NO_OBS }
+  if HandEval.has_observatory(gs) then
+    local obs = {}
+    for _, c in ipairs(gs.consumables or {}) do
+      local h = c.set == "Planet" and not c.debuffed and HandEval.PLANET_HAND[c.key]
+      if h then obs[h] = (obs[h] or 1) * HandEval.OBSERVATORY_X end
+    end
+    f.obs = obs
+  end
+  FLAG_CACHE[gs] = f
+  return f
+end
+HandEval._gs_flags = gs_flags
+
 -- Score `played` with PRECOMPUTED effective jokers + mods (see HandEval.score).
 function HandEval.score_with(gs, played, effective, mods, pre_ht, pre_scoring, pre_contains)
   local ht, scoring, contains
@@ -629,14 +651,15 @@ function HandEval.score_with(gs, played, effective, mods, pre_ht, pre_scoring, p
   --    when its own hand is scored. Consumables score right after the jokers in the same pass (game:
   --    G.FUNCS.evaluate_play iterates jokers then consumeables; Card:calculate_joker, set "Planet"). Unmodelled
   --    before, so holding Saturn for your Straight looked worthless.
-  local obs = HandEval.observatory_xmult(gs, ht)
-  if obs > 1 then chips, mult = apply(st, chips, mult, { xmult = obs }, "observatory:", ht) end
+  local fl = gs_flags(gs)
+  local obs = fl.obs[ht]
+  if obs and obs > 1 then chips, mult = apply(st, chips, mult, { xmult = obs }, "observatory:", ht) end
 
   -- 6. (EngineSim BR) PLASMA DECK: chips and mult are averaged at the final scoring step (game:
   --    Back:trigger_effect 'final_scoring_step': both = floor((chips + mult) / 2)). With it, +Chips are worth as
   --    much as +Mult, which changes which play is best.
   local cmin_f, mmin_f = st.cmin, st.mmin
-  if HandEval.balanced(gs) then
+  if fl.balanced then
     local half = math.floor((chips + mult) / 2)
     chips, mult = half, half
     local hm = math.floor((cmin_f + mmin_f) / 2)
