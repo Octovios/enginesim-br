@@ -475,6 +475,14 @@ end
 
 -- Synergy of a shop joker with the current board + deck. Returns a
 -- future-value-comparable bonus and a short note for the reasoning string.
+-- (EngineSim BR) "3 steel cards" / "3 cartas de Aço"
+local ENH_PT = { steel = "de Aço", glass = "de Vidro", gold = "de Ouro", lucky = "da Sorte", stone = "de Pedra",
+                 mult = "Mult", bonus = "Bônus", wild = "Curinga" }
+function SA.enh_cards_note(n, enh)
+  if I18N.is_pt() then return string.format("%d cartas %s", n, ENH_PT[enh] or enh) end
+  return n .. " " .. enh .. " cards"
+end
+
 local function synergy_bonus(gs, sj)
   local e = JokerData.resolve(sj.key)
   local have = #(gs.jokers or {})
@@ -486,7 +494,7 @@ local function synergy_bonus(gs, sj)
 
   for _, tag in ipairs(e.tags) do
     if tag == "copy" then
-      if have > 0 then bonus = bonus + 2.5; note = note or "copies your best joker"
+      if have > 0 then bonus = bonus + 2.5; note = note or I18N.t("copies your best joker")
       elseif ShopState.slots_free(gs) >= 2 then note = I18N.t("copies the next joker you buy")   -- JokerWorth.copier_future_frac
       else bonus = bonus - 3.0; note = I18N.t("no joker to copy yet") end
     elseif tag == "xmult" and have > 0 then
@@ -496,24 +504,24 @@ local function synergy_bonus(gs, sj)
       local r = ratio_suit(s)
       if r > 0.28 then bonus = bonus + r * 4; note = note or I18N.f("%s-heavy deck (%d%%)", s, math.floor(r * 100)) end
     elseif tag == "rank:even" and p.even / total > 0.45 then
-      bonus = bonus + 1.5; note = note or "even-heavy deck"
+      bonus = bonus + 1.5; note = note or I18N.t("even-heavy deck")
     elseif tag == "rank:odd" and p.odd / total > 0.45 then
-      bonus = bonus + 1.5; note = note or "odd-heavy deck"
+      bonus = bonus + 1.5; note = note or I18N.t("odd-heavy deck")
     elseif tag == "rank:face" and p.face / total > 0.25 then
-      bonus = bonus + 1.5; note = note or "many face cards"
+      bonus = bonus + 1.5; note = note or I18N.t("many face cards")
     -- single-rank payloads (Baron/Triboulet kings, Shoot the Moon queens, Scholar
     -- /Fibonacci aces). Natural density is ~8%, so only an ENRICHED deck (cloned
     -- ranks) counts as synergy here -- the baseline value rides on tier/floor.
     elseif tag == "rank:king" and p.king / total > 0.10 then
-      bonus = bonus + math.min(p.king, 6) * 0.45; note = note or (p.king .. " kings")
+      bonus = bonus + math.min(p.king, 6) * 0.45; note = note or I18N.f("%d kings", p.king)
     elseif tag == "rank:queen" and p.queen / total > 0.10 then
-      bonus = bonus + math.min(p.queen, 6) * 0.4; note = note or (p.queen .. " queens")
+      bonus = bonus + math.min(p.queen, 6) * 0.4; note = note or I18N.f("%d queens", p.queen)
     elseif tag == "rank:ace" and p.ace / total > 0.10 then
-      bonus = bonus + math.min(p.ace, 6) * 0.45; note = note or (p.ace .. " aces")
+      bonus = bonus + math.min(p.ace, 6) * 0.45; note = note or I18N.f("%d aces", p.ace)
     elseif tag:match("^enh:") then
       local enh = "m_" .. tag:sub(5)
       local n = p.enh[enh] or 0
-      if n > 0 then bonus = bonus + math.min(n, 6) * 0.5; note = note or (n .. " " .. tag:sub(5) .. " cards") end
+      if n > 0 then bonus = bonus + math.min(n, 6) * 0.5; note = note or SA.enh_cards_note(n, tag:sub(5)) end
     elseif tag:match("^seal:") then
       -- seals are rare + intentional, so any in-deck is a real synergy (Mime's
       -- gold seals, retrigger-on-seal combos).
@@ -523,7 +531,7 @@ local function synergy_bonus(gs, sj)
       -- exactly the payload the greedy single-hand sampler tends not to play (and
       -- can't see for held cards), so credit it by the deck's special-card density.
       local sr = p.special / total
-      if sr > 0 then bonus = bonus + math.min(sr * 3.0, 2.0); note = note or "retriggers your seals/enhancements" end
+      if sr > 0 then bonus = bonus + math.min(sr * 3.0, 2.0); note = note or I18N.t("retriggers your seals/enhancements") end
     end
   end
   return bonus, note
@@ -935,7 +943,7 @@ local function offer_joker(S, sj)
   end
   local why = note and (" — " .. note)
     or (fnote and (" — " .. fnote))
-    or (down > 0 and " — but has a situational downside")
+    or (down > 0 and I18N.t(" — but has a situational downside"))
     or (econ > 0 and I18N.f(" — +$%d/round", econ) or "")
   local entry = {
     type = "BUY_JOKER", target = sj, cost = cost, value = value, need_jslot = true,
