@@ -181,7 +181,7 @@ end
 -- Deck (or a deck thinned of faces) has no King / Queen build; a Checkered Deck is two suits; etc.
 function RC.deck_profile(gs)
   local deck = (gs and gs.deck) or {}
-  local p = { n = #deck, ranks = {}, suits = {}, enh = {}, seals = {}, editions = 0,
+  local p = { n = #deck, ranks = {}, suits = {}, rs = {}, enh = {}, seals = {}, editions = 0,
               faces = 0, kings = 0, queens = 0, jacks = 0, aces = 0, evens = 0, odds = 0, fib = 0, twos = 0,
               stones = 0, wilds = 0 }
   for _, c in ipairs(deck) do
@@ -190,7 +190,11 @@ function RC.deck_profile(gs)
     else
       local r = Cards.rank_id(c)
       p.ranks[r] = (p.ranks[r] or 0) + 1
-      if c.suit then p.suits[c.suit] = (p.suits[c.suit] or 0) + 1 end
+      if c.suit then
+        p.suits[c.suit] = (p.suits[c.suit] or 0) + 1
+        p.rs[r] = p.rs[r] or {}
+        p.rs[r][c.suit] = (p.rs[r][c.suit] or 0) + 1
+      end
       if Cards.is_face(c) then p.faces = p.faces + 1 end
       if r == 13 then p.kings = p.kings + 1 elseif r == 12 then p.queens = p.queens + 1
       elseif r == 11 then p.jacks = p.jacks + 1 elseif r == 14 then p.aces = p.aces + 1 end
@@ -224,6 +228,16 @@ function RC.deck_profile(gs)
     if k > topn then topr, topn = r, k end
   end
   p.top_rank, p.top_rank_n = topr, topn
+  -- the most duplicated EXACT card (rank + suit): what Flush Five needs five of. Ties: higher rank, then suit name.
+  local tc, tcn = nil, 0
+  for r = 14, 2, -1 do
+    for _, s in ipairs({ "Clubs", "Diamonds", "Hearts", "Spades" }) do
+      local k = p.rs[r] and p.rs[r][s] or 0
+      if k > tcn then tc, tcn = { rank = r, suit = s }, k end
+    end
+  end
+  if tc then tc.n = tcn end
+  p.top_card = tc
   return p
 end
 

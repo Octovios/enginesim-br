@@ -243,6 +243,42 @@ return function(t)
     t.eq(#BA.menu_rows(st(nil)), #A.LIST, "menu: one row per build")
   end
 
+  -- ---- forced Five of a Kind / Flush Five: identical cards, a thinner deck --------------------------------------
+  do
+    local deck = full_deck()
+    -- two extra Kings of Hearts: K-hearts is the most duplicated exact card
+    deck[#deck + 1] = card(201, 13, "Hearts"); deck[#deck + 1] = card(202, 13, "Hearts")
+    local function st(forced, hand)
+      return GS.new{ deck = deck, hand = hand or {}, meta = { ante = 3, seed_hash = "F" },
+        run = { hand_levels = {}, forced_build = forced } }
+    end
+    local prof = RC.deck_profile(st(nil))
+    t.eq(prof.top_card and prof.top_card.rank, 13, "five: the most duplicated card is a King")
+    t.eq(prof.top_card and prof.top_card.suit, "Hearts", "five: ... of Hearts")
+    t.eq(prof.top_card and prof.top_card.n, 3, "five: three copies")
+    local tg = DP.target(st("five"))
+    t.ok(tg.ranks and tg.ranks[13] and tg.suit == "Hearts", "five: the deck plan aims at the exact card (King of Hearts)")
+    t.eq(tg.ideal_size, 25, "five: wants a small deck")
+    -- thinning an off-target card is worth more when Flush Five is forced
+    local junk = card(301, 7, "Spades")
+    local v_auto = DP.removal_value(st(nil), junk)
+    local v_five = DP.removal_value(st("five"), junk)
+    t.ok(v_five > v_auto, "five: cutting an off-target card is worth more")
+    -- Death copies the King of Hearts onto the junk; Cryptid copies the King of Hearts
+    local hand = { card(201, 13, "Hearts"), card(110, 9, "Clubs"), card(301, 7, "Spades"), card(120, 4, "Diamonds") }
+    local d = Tarot.death_info(st("five", hand), hand)
+    t.eq(d and d.source.id, 201, "five: Death copies the King of Hearts")
+    t.ok(d and d.target.id ~= 201 and d.target.rank_id ~= 13, "five: onto an off-target card")
+    local cr = Tarot.best_targets(st("five", hand), "c_cryptid", hand)
+    t.eq(cr and cr[1] and cr[1].id, 201, "five: Cryptid copies the King of Hearts")
+    -- Standard packs: the target card is wanted, unrelated cards are bloat
+    t.eq(BA.card_bonus(st("five"), card(401, 13, "Hearts")), BA.CARD_ON_TARGET, "five: a King of Hearts from a pack is a target")
+    t.eq(BA.card_bonus(st("five"), card(402, 6, "Clubs")), BA.CARD_OFF_TARGET, "five: an unrelated card dilutes")
+    t.eq(BA.card_bonus(st("five"), card(403, 13, "Spades")), 0, "five: a King of another suit is neutral")
+    t.eq(BA.card_bonus(st(nil), card(401, 13, "Hearts")), 0, "auto: no card bias")
+    t.ok(BA.consumable_bonus(st("five"), "c_cryptid") > 0, "five: Cryptid is favoured")
+  end
+
   -- ---- Negative jokers need no slot (live report: self-play sold a joker to fit a Negative one) -------------------
   do
     local SA = require("engine.shop_advisor")

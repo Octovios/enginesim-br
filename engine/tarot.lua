@@ -473,6 +473,20 @@ function T.best_targets(gs, key, pool)
   end
   -- SPECTRAL — a seal/edition on 1 card: the highest-value card that doesn't already have one.
   local sp = T.SPECTRAL_TARGET[key]
+  -- (EngineSim BR) a FORCED build copies the card it is built on (Flush Five: the target card itself)
+  if sp and sp.kind == "copy" and gs and gs.run and gs.run.forced_build then
+    local tgt, q = build_target(gs)
+    if tgt and q then
+      local best, bq
+      for _, c in ipairs(pool) do
+        if not Cards.is_stone(c) then
+          local v = q(c)
+          if not bq or v > bq or (v == bq and (c.id or 0) < (best.id or 0)) then best, bq = c, v end
+        end
+      end
+      if best then return { best } end
+    end
+  end
   if sp and sp.kind == "copy" and gs then   -- Cryptid: the card whose two copies are worth most, money included
     local CV = require("engine.consumable_value")
     do

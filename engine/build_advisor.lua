@@ -214,6 +214,28 @@ function BA.consumable_bonus(gs, key)
   return 0
 end
 
+-- A playing card offered by a Standard pack, for a forced build with a deck target: + when it IS the target (more
+-- copies of the Flush Five card, another Heart for a Hearts flush), - when it matches nothing (it dilutes the deck).
+-- Fraction of a boss hand, as the pack advisor values cards.
+BA.CARD_ON_TARGET = 0.12
+BA.CARD_OFF_TARGET = -0.05
+function BA.card_bonus(gs, card)
+  if not (card and gs and gs.run and gs.run.forced_build) then return 0 end
+  local t = BA.deck_target(gs)
+  if not t then return 0 end
+  local Cards = require("util.cards")
+  if Cards.is_stone(card) then return 0 end
+  local r = Cards.rank_id(card)
+  local hits, wants = 0, 0
+  if t.ranks then wants = wants + 1; if t.ranks[r] then hits = hits + 1 end end
+  if t.suit then wants = wants + 1; if Cards.is_suit(card, t.suit) then hits = hits + 1 end end
+  if t.face then wants = wants + 1; if Cards.is_face(card) then hits = hits + 1 end end
+  if wants == 0 then return 0 end
+  if hits == wants then return BA.CARD_ON_TARGET end
+  if hits == 0 then return BA.CARD_OFF_TARGET end
+  return 0
+end
+
 -- the deck-plan target of the forced build (nil = let engine/deck_plan decide)
 function BA.deck_target(gs)
   local forced = BA.forced(gs)

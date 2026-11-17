@@ -59,6 +59,7 @@ end
 --   need     = core-piece weight that makes the build "complete" (default 2.5)
 --   kind     = "hand" (default when hands) | "economy" | "free"
 --   favoured(p) -> true when the deck holds clearly MORE of what the build needs than a standard deck (optional)
+--   ideal_size / thin_mult (optional): the deck size the build wants and how much more thinning is worth to it
 A.LIST = {
   { id = "flush_any",
     name = { en = "Flush (any suit)", pt = "Flush (qualquer naipe)" },
@@ -81,7 +82,7 @@ A.LIST = {
     support = { "j_smeared", "j_four_fingers", "j_oops", "j_blueprint", "j_brainstorm", "j_seance" },
     anti = { "j_flower_pot", "j_seeing_double", "j_wrathful_joker", "j_gluttenous_joker", "j_greedy_joker" },
     tarots = { "c_sun", "c_lovers", "c_death", "c_hanged_man", "c_sigil" }, enh = "m_wild",
-    deck = suit_fit("Hearts"), target = function() return { suit = "Hearts" } end },
+    deck = suit_fit("Hearts"), target = function() return { suit = "Hearts" } end, thin_mult = 1.5 },
 
   { id = "flush_diamonds", favoured = function(p) return share((p.suits.Diamonds or 0) + p.wilds, p.n) >= 0.4 end,
     name = { en = "Diamonds Flush (Rough Gem)", pt = "Flush de Ouros (Rough Gem)" },
@@ -91,7 +92,7 @@ A.LIST = {
     support = { "j_smeared", "j_four_fingers", "j_bull", "j_bootstraps", "j_blueprint", "j_brainstorm", "j_seance" },
     anti = { "j_flower_pot", "j_seeing_double", "j_wrathful_joker", "j_gluttenous_joker", "j_lusty_joker" },
     tarots = { "c_star", "c_lovers", "c_death", "c_hanged_man", "c_sigil" }, enh = "m_wild",
-    deck = suit_fit("Diamonds"), target = function() return { suit = "Diamonds" } end },
+    deck = suit_fit("Diamonds"), target = function() return { suit = "Diamonds" } end, thin_mult = 1.5 },
 
   { id = "flush_spades", favoured = function(p) return share((p.suits.Spades or 0) + p.wilds, p.n) >= 0.4 end,
     name = { en = "Spades Flush (Arrowhead)", pt = "Flush de Espadas (Arrowhead)" },
@@ -101,7 +102,7 @@ A.LIST = {
     support = { "j_smeared", "j_four_fingers", "j_blueprint", "j_brainstorm", "j_seance" },
     anti = { "j_flower_pot", "j_seeing_double", "j_lusty_joker", "j_greedy_joker" },
     tarots = { "c_world", "c_lovers", "c_death", "c_hanged_man", "c_sigil" }, enh = "m_wild",
-    deck = suit_fit("Spades"), target = function() return { suit = "Spades" } end },
+    deck = suit_fit("Spades"), target = function() return { suit = "Spades" } end, thin_mult = 1.5 },
 
   { id = "flush_clubs", favoured = function(p) return share((p.suits.Clubs or 0) + p.wilds, p.n) >= 0.4 end,
     name = { en = "Clubs Flush (Onyx Agate)", pt = "Flush de Paus (Onyx Agate)" },
@@ -111,7 +112,7 @@ A.LIST = {
     support = { "j_smeared", "j_four_fingers", "j_blueprint", "j_brainstorm", "j_seance" },
     anti = { "j_flower_pot", "j_lusty_joker", "j_greedy_joker" },
     tarots = { "c_moon", "c_lovers", "c_death", "c_hanged_man", "c_sigil" }, enh = "m_wild",
-    deck = suit_fit("Clubs"), target = function() return { suit = "Clubs" } end },
+    deck = suit_fit("Clubs"), target = function() return { suit = "Clubs" } end, thin_mult = 1.5 },
 
   { id = "straight",
     name = { en = "Straight", pt = "Sequência" },
@@ -167,7 +168,15 @@ A.LIST = {
     anti = { "j_half" },
     tarots = { "c_death", "c_cryptid", "c_ouija", "c_sigil", "c_hanged_man" },
     deck = function(p) return clamp01(0.35 + 0.15 * math.max(0, (p.top_rank_n or 0) - 4)), nil end,
-    target = function(p) return { ranks = p.top_rank and { [p.top_rank] = true } or nil } end },
+    -- EngineSim BR: Flush Five needs five IDENTICAL cards, so the target is the most duplicated exact card (rank AND
+    -- suit): Death copies it onto junk, Cryptid copies it, Hanged Man cuts everything else, Standard packs favour it,
+    -- and thinning is worth more (a small deck draws the copies together)
+    target = function(p)
+      local tc = p.top_card
+      if tc then return { ranks = { [tc.rank] = true }, suit = tc.suit } end
+      return { ranks = p.top_rank and { [p.top_rank] = true } or nil }
+    end,
+    ideal_size = 25, thin_mult = 2.5 },
 
   { id = "faces",
     name = { en = "Face cards (J/Q/K)", pt = "Realeza (J/Q/K)" },

@@ -140,9 +140,12 @@ local function value_item(gs, it, need, freq, base, rng, cheap, hctx)
     local vfrac, gain = ConsumableValue.card_value(gs, it.set, it.key, freq, need, rng, nil, hctx)
     return vfrac + VU.income_frac(gs, gain or 0), false   -- money tarots: the rate the pack's PRICE was set at (packs.lua)
   elseif it.card then
-    if cheap then return 0.05, false end
+    -- (EngineSim BR) a forced build favours its target cards (engine/build_advisor.card_bonus)
+    local okb, BA = pcall(require, "engine.build_advisor")
+    local fb = (okb and BA) and BA.card_bonus(gs, it.card) or 0
+    if cheap then return 0.05 + fb, false end
     local cv = ConsumableValue.card_add_value(gs, it.card, { need = need, base = base, samples = 12, rng = rng })
-    return cv or 0.05, cv ~= nil
+    return (cv or 0.05) + fb, cv ~= nil
   end
   return 0.05, false
 end

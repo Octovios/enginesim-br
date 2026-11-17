@@ -95,7 +95,9 @@ function DP.target(gs)
       t.suit, t.ranks, t.face = ft.suit, ft.ranks, ft.face
       t.archetype = (ft.suit and "flush") or (ft.face and "face") or "hand"
       t.reason = I18N.t("Forced build — shape the deck toward it.")
-      t.want_thin = n > DP.IDEAL_SIZE
+      t.ideal_size = (arch and arch.ideal_size) or DP.IDEAL_SIZE
+      t.thin_mult = arch and arch.thin_mult or nil
+      t.want_thin = n > t.ideal_size
       return t
     end
   end
@@ -179,7 +181,7 @@ function DP.removal_value(gs, card, target, mean, n)
   local hs = (gs.run and gs.run.hand_size) or 8
   local focus = (mean - DP.card_quality(gs, card, target)) / n   -- >0 when below the mean
   local thin = (n > target.ideal_size) and 0.02 or 0.004
-  return (focus * QUALITY_FRAC * hs + thin) * DP.DECKQ_MULT
+  return (focus * QUALITY_FRAC * hs + thin) * DP.DECKQ_MULT * (target.thin_mult or 1)
 end
 -- DECK-QUALITY CALIBRATION TEST (2026-10-21; BES_DECKQ_MULT, default 1): thin8_7 (the 8 lowest cards removed at the
 -- start) +0.424 p 0.03, but the same 8 spread over the ranks -0.163 (thinr8, -0.588 vs thin8, p 0.001): deck QUALITY
