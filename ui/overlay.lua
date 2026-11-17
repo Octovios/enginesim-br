@@ -214,13 +214,20 @@ function Overlay.set(ranked, gs)
   if a.reorder then -- decision_engine only sets this when a reorder is worth it
     local o, parts = a.reorder, {}
     local pt = I18N.is_pt()
-    if o.joker_changed then parts[#parts + 1] = (pt and "coringas " or "jokers ") .. jokers_str(o.joker_order) end
-    if o.card_changed then parts[#parts + 1] = (pt and "cartas " or "cards ") .. cards_str(o.card_order) end
     local tail
     if o.objective == "money" then tail = string.format(" (+$%g)", o.money_gain)
     elseif o.gain and o.gain > 0 then tail = string.format(" (+%d)", o.gain)
     else tail = pt and " (mais seguro)" or " (safer)" end
-    s.reorder = L((pt and "Reordene: " or "Reorder: ") .. table.concat(parts, ", ") .. tail)
+    if pt then
+      -- (EngineSim BR) say it as an instruction: which order, left to right (the card tags number them 1..n)
+      if o.card_changed then parts[#parts + 1] = I18N.say("reorder_play", cards_str(o.card_order)) end
+      if o.joker_changed then parts[#parts + 1] = I18N.say("reorder_jokers", jokers_str(o.joker_order)) end
+      s.reorder = L(table.concat(parts, ". ") .. tail)
+    else
+      if o.joker_changed then parts[#parts + 1] = "jokers " .. jokers_str(o.joker_order) end
+      if o.card_changed then parts[#parts + 1] = "cards " .. cards_str(o.card_order) end
+      s.reorder = "Reorder: " .. table.concat(parts, ", ") .. tail
+    end
   end
   -- predicted score of this play vs the chips still needed this blind (the engine's expected score)
   local b = gs and gs.blind

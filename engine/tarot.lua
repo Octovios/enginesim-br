@@ -540,9 +540,9 @@ function T.death_info(gs, pool)
   local tgt, src = pool[lo], pool[hi]
   local tl, sl = disambig_label(tgt, pool), disambig_label(src, pool)
   local swap = lo > hi                       -- the target sits to the RIGHT of the source: drag it left first
-  local note = I18N.say("death_note", tl, sl)
-  if swap then note = note .. " - " .. I18N.say("death_drag", tl, sl)
-  else note = note .. " (" .. I18N.say("death_ok") .. ")" end
+  local note
+  if swap then note = I18N.say("death_drag", tl, sl) .. "; " .. I18N.say("death_note", tl, sl)   -- the first action first
+  else note = I18N.say("death_note", tl, sl) .. " (" .. I18N.say("death_ok") .. ")" end
   return { target = tgt, source = src, target_i = lo, source_i = hi, swap = swap, note = note,
            target_label = tl, source_label = sl }
 end

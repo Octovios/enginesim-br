@@ -55,7 +55,7 @@ com o seu baralho real (Monte-Carlo) e compara as opções — o mesmo princípi
 ## Como ler o painel
 
 O painel fica no topo da barra esquerda do jogo. A linha grande é o lance recomendado (ex.: `Jogar Ke Kc 7p 7o 2e`
-ou `Usar A Morte — 3p vira cópia de Ke — antes arraste 3p para a ESQUERDA de Ke`). As tags embaixo mostram a
+ou `Usar A Morte — antes arraste 3p para a ESQUERDA de Ke; 3p vira cópia de Ke`). As tags embaixo mostram a
 pontuação prevista contra o que falta, a confiança e o custo. **Passe o mouse no painel** para ver:
 
 - o **porquê** detalhado (ex.: o cálculo completo de pular vs. jogar);

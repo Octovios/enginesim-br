@@ -54,7 +54,7 @@ return {
 
   -- ---- Death and ordered consumables (engine/tarot, ui) ---------------------------------------------------------
   death_note = { en = "%s becomes a copy of %s", pt = "%s vira cópia de %s" },
-  death_drag = { en = "drag %s to the LEFT of %s first", pt = "antes arraste %s para a ESQUERDA de %s" },
+  death_drag = { en = "first drag %s to the LEFT of %s", pt = "antes arraste %s para a ESQUERDA de %s" },
   death_ok = { en = "the order is already right (left becomes right)", pt = "a ordem já está certa (a da esquerda vira a da direita)" },
   death_rule = { en = "Death: select both cards - the LEFT one becomes a copy of the RIGHT one.",
                  pt = "A Morte: selecione as duas cartas - a da ESQUERDA vira cópia da da DIREITA." },
