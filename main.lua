@@ -257,6 +257,22 @@ function BES.decorate(gs)
   return gs
 end
 
+-- (EngineSim BR) THE STANDING JOKER ORDER: the arrangement that scores best over typical hands of this deck
+-- (engine/ordering.standing_order). Attached to the blind-select and shop advice as `arrange` (+ a note): the panel
+-- numbers the jokers 1..n and the self-player drags them into place.
+local Ordering = try_require("engine.ordering")
+function BES.attach_arrangement(action, gs)
+  if not (action and gs and Ordering and Ordering.standing_order) then return end
+  local ok, so = pcall(Ordering.standing_order, gs)
+  if not (ok and so and so.order) then return end
+  local names = {}
+  for _, j in ipairs(so.order) do names[#names + 1] = j.name or j.key or "?" end
+  action.arrange = so.order
+  action.arrange_gain = so.gain
+  action.arrange_note = I18N and I18N.say("arrange_jokers", table.concat(names, " > "), math.floor(so.gain * 100 + 0.5))
+    or ("Arrange jokers: " .. table.concat(names, " > "))
+end
+
 -- The popup's "this run" (stake / deck) and build lines, refreshed on every state change (cheap).
 function BES.panel_info(gs)
   if not (BuildAdvisor and Overlay and gs) then return end
@@ -327,6 +343,8 @@ function BES.evaluate(with_sim, gs)
           end
         end
       end
+      -- (EngineSim BR) no Dagger arrangement: the standing joker order for the blind ahead
+      if action.type ~= "SKIP" and not action.arrange then BES.attach_arrangement(action, gs) end
       BES.last = { gs = gs, ranked = { best = action }, skip = true }
       if Overlay then Overlay.set({ best = action }) end
       Log.info((action.type == "SKIP" and "SKIP: " or "PLAY: ") .. (action.reason or ""))
@@ -345,6 +363,8 @@ function BES.evaluate(with_sim, gs)
           ranked.best.reason = (ranked.best.reason or "") .. "  [partial: " .. tostring(ranked.warn):sub(1, 90) .. "]"
         end
       end
+      -- (EngineSim BR) the standing joker order (not on a sale: the row is about to change)
+      if ranked.best and not tostring(ranked.best.type or ""):find("^SELL") then BES.attach_arrangement(ranked.best, gs) end
       BES.last = { gs = gs, ranked = ranked, shop = true }
       if Overlay then Overlay.set(ranked, gs) end
       if HUDPanel then HUDPanel.refresh() end

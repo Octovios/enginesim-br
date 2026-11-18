@@ -229,6 +229,8 @@ function Overlay.set(ranked, gs)
       s.reorder = "Reorder: " .. table.concat(parts, ", ") .. tail
     end
   end
+  -- (EngineSim BR) the standing joker order suggested at blind select / in the shop
+  if a.arrange_note and a.arrange_note ~= "" and s.reorder == "" then s.reorder = L(a.arrange_note) end
   -- predicted score of this play vs the chips still needed this blind (the engine's expected score)
   local b = gs and gs.blind
   if a.type == "PLAY" and a.score and b and (b.target_chips or 0) > 0 then

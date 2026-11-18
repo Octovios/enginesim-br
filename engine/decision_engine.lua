@@ -1677,7 +1677,7 @@ function DE._annotate(best, c)
     local keeps_clear = o and o.objective == "money" and c.remaining > 0
       and (o.current_min or 0) < c.remaining and (o.best_min or 0) >= c.remaining
     local worth_it = o and o.improves
-      and (o.objective ~= "money" or o.money_gain > 1e-9 or keeps_clear)
+      and (o.objective ~= "money" or o.money_gain > 1e-9 or keeps_clear or (o.joker_score_gain or 0) > 0)
     if worth_it then
       local tips = {}
       if o.joker_changed then tips[#tips + 1] = "jokers " .. joker_labels(o.joker_order) end
@@ -1686,6 +1686,10 @@ function DE._annotate(best, c)
       if keeps_clear and o.money_gain <= 1e-9 then
         desc = I18N.t("the clear")
         note = I18N.t(" — as dealt it falls short")
+      elseif o.objective == "money" and o.money_gain <= 1e-9 and (o.joker_score_gain or 0) > 0 then
+        -- (EngineSim BR) the clear is locked: the reorder is for the jokers' order on later hands
+        desc = string.format("+%d", math.floor(o.joker_score_gain + 0.5))
+        note = ""
       elseif o.objective == "money" then
         desc = I18N.f("+$%g this blind", o.money_gain) -- clear is already locked
         note = ""

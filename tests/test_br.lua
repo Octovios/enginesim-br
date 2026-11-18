@@ -279,6 +279,52 @@ return function(t)
     t.ok(BA.consumable_bonus(st("five"), "c_cryptid") > 0, "five: Cryptid is favoured")
   end
 
+  -- ---- joker order: additive before multiplicative (live report: "it never moves the multipliers last") ----------
+  do
+    local Ordering = require("engine.ordering")
+    local deck = full_deck()
+    local xm = GS.joker{ id = 501, key = "j_cavendish", name = "Cavendish", position = 1 }
+    local add = GS.joker{ id = 502, key = "j_joker", name = "Joker", position = 2 }
+    local function st(jokers)
+      return GS.new{ deck = deck, jokers = jokers, meta = { ante = 2, seed_hash = "O" },
+        run = { hand_levels = {}, hand_size = 8, joker_slots = 5 } }
+    end
+    local so = Ordering.standing_order(st({ xm, add }))
+    t.ok(so ~= nil, "order: an xMult left of a +Mult joker gets a standing order")
+    t.eq(so and so.order[1].key, "j_joker", "order: the +Mult joker goes first")
+    t.eq(so and so.order[2].key, "j_cavendish", "order: the xMult joker goes last")
+    t.ok(so and so.gain > 0.01, "order: with a real gain on typical hands")
+    t.eq(Ordering.standing_order(st({ add, xm })), nil, "order: an already good row is left alone")
+    t.eq(Ordering.standing_order(st({ add, GS.joker{ id = 503, key = "j_ceremonial", name = "Ceremonial Dagger" }, xm })), nil,
+      "order: Ceremonial Dagger boards are left to the Dagger plan")
+    -- a locked clear (money objective) still fixes the joker order when it costs no money
+    local hand = { card(1, 14, "Spades"), card(2, 14, "Hearts"), card(3, 9, "Clubs") }
+    local g = st({ xm, add }); g.hand = hand
+    local o = Ordering.optimize(g, { hand[1], hand[2] }, { objective = "money", remaining = 1 })
+    t.ok(o.joker_changed, "order: a guaranteed clear still reorders the jokers")
+    t.ok((o.joker_score_gain or 0) > 0, "order: ... for score, at no money cost")
+    t.eq(o.joker_order[1].key, "j_joker", "order: +Mult first on the play too")
+    -- end to end: an easy blind (the clear is locked) still gets the joker reorder on the play
+    local DEng = require("engine.decision_engine")
+    local hand8 = { card(11, 14, "Spades"), card(12, 14, "Hearts"), card(13, 13, "Clubs"), card(14, 9, "Diamonds"),
+                    card(15, 7, "Spades"), card(16, 5, "Hearts"), card(17, 4, "Clubs"), card(18, 2, "Diamonds") }
+    local bgs = GS.new{ deck = deck, remaining = deck, hand = hand8, jokers = { xm, add },
+      meta = { ante = 1, round = 1, state = "SELECTING_HAND", seed_hash = "O" },
+      run = { hand_levels = {}, hand_size = 8, joker_slots = 5, consumable_slots = 2 },
+      blind = { target_chips = 100, chips_scored = 0, hands_left = 4, discards_left = 3, base_hands = 4,
+                base_discards = 3, blind_type = "Small" } }
+    local r = DEng.decide(bgs, {})
+    t.eq(r.best and r.best.type, "PLAY", "order e2e: plays the easy blind")
+    t.ok(r.best and r.best.reorder and r.best.reorder.joker_changed, "order e2e: and asks to put the +Mult joker first")
+
+    -- the panel numbers the jokers on a shop action that carries the order
+    local H = require("ui.highlights")
+    local plan = H.plan({ type = "BUY_JOKER", target = { key = "j_duo", id = 9 }, arrange = so and so.order })
+    local nums = {}
+    for _, w in ipairs(plan) do if w.areas[1] == "jokers" then nums[#nums + 1] = w.label .. ":" .. tostring(w.target.id) end end
+    t.eq(table.concat(nums, ","), "1:502,2:501", "order: shop advice numbers the jokers 1..n")
+  end
+
   -- ---- Negative jokers need no slot (live report: self-play sold a joker to fit a Negative one) -------------------
   do
     local SA = require("engine.shop_advisor")

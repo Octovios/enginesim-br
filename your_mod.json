@@ -10,7 +10,7 @@
   "prefix": "besbr",
   "main_file": "main.lua",
   "priority": 0,
-  "version": "0.7.1",
+  "version": "0.7.2",
   "badge_colour": "2E8B57",
   "dependencies": [
     "Steamodded (>=1.0.0~)"

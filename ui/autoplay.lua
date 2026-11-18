@@ -667,7 +667,7 @@ local function do_blind_select(G, best, logger)
   -- rightmost); if the engine couldn't decide, park it (never let it eat a purchase by accident). The array move is
   -- immediate and the Dagger fires only once the blind is set.
   if best and best.arrange then
-    if reorder_jokers(G, best.arrange) then log(logger, "arranged jokers for Ceremonial Dagger") end
+    if reorder_jokers(G, best.arrange) then log(logger, "arranged jokers (Ceremonial Dagger / standing order)") end
   elseif not (best and best.dagger_checked) then
     protect_from_dagger(G, logger)
   end
@@ -959,7 +959,14 @@ function Autoplay.tick(last, logger)
   Autoplay.locked_until = now() + 1.5
   local issued = false
   if ch == "hand" then issued = do_hand(G, best, logger)
-  elseif ch == "shop" then issued = do_shop(G, best, logger)
+  elseif ch == "shop" then
+    -- (EngineSim BR) arrange the jokers into the standing order first; re-enter next pass for the shop action
+    if best.arrange and reorder_jokers(G, best.arrange) then
+      log(logger, "arranged jokers (standing order)")
+      Autoplay.locked_until = now() + 0.4
+      return
+    end
+    issued = do_shop(G, best, logger)
   elseif ch == "pack" then issued = do_pack(G, best, logger)
   elseif ch == "blind_select" then issued = do_blind_select(G, best, logger) end
   -- Burn last_sig only when the action ISSUED, or after MAX_WAIT stuck on the SAME state. A button

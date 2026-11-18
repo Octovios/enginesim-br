@@ -63,6 +63,8 @@ return {
   tag_drag_left = { en = "<< DRAG", pt = "<< ARRASTE" },
   reorder_play = { en = "Play them in this order (left to right): %s", pt = "Jogue nesta ordem (da esquerda para a direita): %s" },
   reorder_jokers = { en = "Arrange your jokers (left to right): %s", pt = "Organize seus coringas (da esquerda para a direita): %s" },
+  arrange_jokers = { en = "Arrange your jokers (left to right): %s (+%d%% score on typical hands).",
+                     pt = "Organize seus coringas (da esquerda para a direita): %s (+%d%% de pontos nas mãos típicas)." },
 
   -- ---- builds (engine/build_advisor, ui/build_menu) -------------------------------------------------------------
   build_title = { en = "Builds", pt = "Builds" },

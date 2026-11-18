@@ -22,9 +22,18 @@ com o seu baralho real (Monte-Carlo) e compara as opções — o mesmo princípi
 | **A Morte (Death)** | Diz **qual carta vira qual** e, se a ordem na mão estiver errada, manda **arrastar a carta para a ESQUERDA** antes de usar. As tags nas cartas mostram `1 VIRA` / `2 MODELO` e `<< ARRASTE` em vermelho. |
 | **Builds** | 23 builds catalogadas (flush por naipe, sequência, pares, full house, quadra, quina, realeza, Reis de Aço/Baron+Mime, Fibonacci, números pares, Hack, Sorte, Vidro, Pedra, Dinheiro, Descartes, Planetas, Repetições, Carta Alta). Cada uma é avaliada pelo **seu baralho**, pelos coringas que você tem, pelos que **estão na loja agora** e pelos que **já apareceram na loja nesta run**. O painel mostra as 3 melhores com o que você já tem e o que procurar. |
 | **Forçar build (F3)** | Escolha uma build para forçar (no início ou no meio da run). O motor passa a **puxar compras, vendas, pacotes, planetas e tarôs** para ela: peças principais ganham prioridade e não são vendidas, a Morte/Força/Enforcado miram o naipe/valor da build, os tarôs certos (ex.: O Carro / The Chariot, que cria cartas de Aço, para Reis de Aço) sobem de valor. Dá para deixar uma build padrão para toda run nova nas configurações. |
+| **Ordem dos coringas** | Calcula a melhor ordem dos coringas sobre várias mãos típicas do seu baralho (quem soma Fichas/Mult antes, quem multiplica depois, copiadores no lugar certo) e mostra na escolha do blind e na loja, com números em cima dos coringas. O autoplay arruma sozinho. Na jogada, reordena mesmo quando a mão já vence (vale para as próximas mãos). |
 | **Observatório** | O voucher Observatório agora é calculado (x1.5 por planeta guardado da mão jogada) e o motor para de mandar usar esses planetas. |
 | **Perkeo** | Cópias Negativas de consumíveis passaram a ser lidas do jogo. |
 | **Como um motor de xadrez** | Além do melhor lance, o painel mostra **outras opções** (as próximas melhores linhas) e o detalhamento do cálculo. |
+
+## Novidades
+
+- **0.7.2** — ordem permanente dos coringas (somar antes, multiplicar depois), sugerida na escolha do blind e na loja
+  e aplicada pelo autoplay; na jogada, os coringas são reordenados mesmo quando a mão já vence.
+- **0.7.1** — coringa **Negativo** não precisa de vaga: o motor não manda mais vender um coringa para comprá-lo
+  (bug herdado do original). **Quina / Flush Five forçado** mira numa carta exata (valor + naipe): A Morte e o
+  Cryptid copiam essa carta, pacotes Padrão priorizam cópias dela e o baralho é afinado com mais força (ideal ~25).
 
 ## Instalação
 

@@ -100,8 +100,10 @@ function H.plan(a)
   elseif t == "SKIP" then button({ "skip_booster", "skip_blind" })
   elseif t == "CONTINUE" then
     button({ "select_blind" })
-    if a.arrange then numbered({ "jokers" }, a.arrange, "GOLD") end   -- Ceremonial Dagger arrangement
+    if a.arrange then numbered({ "jokers" }, a.arrange, "GOLD") end   -- Ceremonial Dagger / standing joker order
   end
+  -- (EngineSim BR) the standing joker order on a shop action: number the jokers in the order to arrange them
+  if a.arrange and t ~= "CONTINUE" and t ~= "PLAY" and t ~= "DISCARD" then numbered({ "jokers" }, a.arrange, "GOLD") end
   return out
 end
 
