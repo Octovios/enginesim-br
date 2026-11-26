@@ -130,6 +130,8 @@ local function read_card(c)
   }
 end
 
+Extract.read_card = read_card   -- (EngineSim BR) core/seer_peek's predicted cards are read the same way
+
 local function read_area(area)
   local out = {}
   if area and area.cards then
@@ -297,6 +299,10 @@ function Extract.snapshot()
       items[#items + 1] = item
     end
     pack = { items = items, picks_left = (GAME.pack_choices) or 1 }  -- VERIFY pack_choices
+    -- (EngineSim BR) which booster this is (Steamodded keeps the opened booster card): the seer checks its prediction
+    local S = rawget(_G, "SMODS")
+    local ob = S and S.OPENED_BOOSTER
+    pack.booster_key = ob and ob.config and ob.config.center and ob.config.center.key or nil
   end
 
   -- shop (only populated while ACTUALLY in the shop). The shop CardAreas keep
@@ -309,6 +315,8 @@ function Extract.snapshot()
       key = center and center.key,
       name = loc_name(center and center.set, center and center.key, c.ability and c.ability.name),
       cost = c.cost,
+      -- (EngineSim BR) a booster's card count (the seer deals that many)
+      size = (center and center.set == "Booster" and c.ability) and c.ability.extra or nil,
     }
   end
   local function read_centers(area)
@@ -321,7 +329,7 @@ function Extract.snapshot()
   local shop = nil
   if in_shop and (G.shop_jokers or G.shop_vouchers or G.shop_booster) then
     -- the main shop slots hold JOKERS *and* standalone tarots/planets/spectrals
-    local sj, sc = {}, {}
+    local sj, sc, slots = {}, {}, {}
     if G.shop_jokers and G.shop_jokers.cards then
       for i, c in ipairs(G.shop_jokers.cards) do
         local set = c.ability and c.ability.set
@@ -331,6 +339,10 @@ function Extract.snapshot()
           local item = read_center(c); item.set = set
           sc[#sc + 1] = item
         end
+        -- (EngineSim BR) every shelf card in order, playing cards too (the seer checks its reroll prediction)
+        local center = c.config and c.config.center
+        slots[#slots + 1] = { key = center and center.key,
+          card = (set == "Default" or set == "Enhanced") and read_card(c) or nil }
       end
     end
     shop = {
@@ -344,6 +356,9 @@ function Extract.snapshot()
       -- too so the advisor never re-recommends a reroll once it's been spent. VERIFY
       free_rerolls = GAME.current_round and GAME.current_round.free_rerolls,
       joker_slots = (G.jokers and G.jokers.config and G.jokers.config.card_limit) or 5,
+      slots = slots,                          -- (EngineSim BR) the shelf in order
+      times_rerolled = GAME.round_scores and GAME.round_scores.times_rerolled
+        and GAME.round_scores.times_rerolled.amt,   -- the run's reroll count (a reroll just happened when it grows)
     }
   end
 

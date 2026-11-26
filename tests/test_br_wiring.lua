@@ -198,6 +198,88 @@ return function(t)
     G.GAME.current_round.discards_left = 1
     settle()
     t.eq(BES.seer.miss, 1, "wiring: a draw that does not match the order is caught")
+
+    -- seer mode in the shop: the pack's cards and the next rerolls are predicted, shown, and checked when the pack
+    -- opens and when the shop rerolls (core/seer_peek against tests/standin_game)
+    local Standin = require("tests.standin_game")
+    local uninstall_standin = Standin.install(G, SMODS)
+    local sok, serr = pcall(function()
+      G.GAME.round_resets.ante = 2
+      G.GAME.round_scores = { times_rerolled = { amt = 0 } }
+      G.STATE = STATES.SHOP
+      G.shop_jokers = { cards = {} }
+      G.shop_vouchers = { cards = {} }
+      local booster = { sort_id = 970, config = { center = G.P_CENTERS.p_arcana_normal_1 },
+        ability = { set = "Booster", name = "Arcana Pack", extra = 3 }, cost = 4 }
+      G.shop_booster = { cards = { booster } }
+      settle()
+      local shop = BES.last and BES.last.gs and BES.last.gs.shop
+      t.ok(shop and shop.boosters[1] and shop.boosters[1].seer and #shop.boosters[1].seer.items == 3,
+        "wiring: the seer deals the Arcana pack before it is bought")
+      t.ok(shop and shop.seer_rerolls and #shop.seer_rerolls == 3, "wiring: ... and the next three rerolls")
+      local panel = table.concat(Overlay.state.seer or {}, "\n")
+      t.ok(panel:find("reroll 1:", 1, true) ~= nil, "wiring: the panel lists the next rerolls")
+      t.ok(panel:find(" tem: ", 1, true) ~= nil, "wiring: ... and what the pack holds")
+      -- the pack is bought and opened: the game deals it
+      G.STATE = STATES.TAROT_PACK
+      G.shop_booster = { cards = {} }
+      SMODS.OPENED_BOOSTER = booster
+      G.pack_cards = { cards = Standin.real_open("p_arcana_normal_1") }
+      settle()
+      t.eq(BES.seer.shop_ok, 1, "wiring: the opened pack matched the prediction")
+      -- the pack closes; back in the shop, a reroll
+      for _, c in ipairs(G.pack_cards.cards) do G.GAME.used_jokers[c.config.center.key] = nil end
+      G.pack_cards = { cards = {} }
+      SMODS.OPENED_BOOSTER = nil
+      G.STATE = STATES.SHOP
+      settle()
+      Standin.real_reroll()
+      G.GAME.round_scores.times_rerolled.amt = 1
+      settle()
+      t.eq(BES.seer.shop_ok, 2, "wiring: the reroll matched the prediction")
+      t.eq(BES.seer.shop_miss, 0, "wiring: no pack/reroll miss")
+      -- a reroll the prediction did not see coming (a stream moved behind its back): still checked
+      settle()
+      pseudoseed("cdt2"); pseudoseed("Joker1sho2"); pseudoseed("rarity2sho")
+      Standin.real_reroll()
+      G.GAME.round_scores.times_rerolled.amt = 2
+      settle()
+      t.eq(BES.seer.shop_miss + BES.seer.shop_ok, 3, "wiring: the next reroll was checked too")
+
+      -- the blind select: the next round's opening hand is dealt from the round-start shuffle, shown, then checked
+      G.shop_jokers, G.shop_vouchers, G.shop_booster = nil, nil, nil
+      local all = {}
+      for _, c in ipairs(cards) do all[#all + 1] = c end
+      G.deck.cards, G.hand.cards = all, {}
+      G.STATE = STATES.BLIND_SELECT
+      G.GAME.round_resets.blind_states = { Small = "Select", Big = "Upcoming", Boss = "Upcoming" }
+      settle()
+      t.ok(BES.seer.round_pred ~= nil, "wiring: the next round's order is predicted at the blind select")
+      local panel2 = table.concat(Overlay.state.seer or {}, "\n")
+      t.ok(panel2:find("mão inicial da próxima rodada", 1, true) ~= nil, "wiring: the panel shows the next opening hand")
+      t.ok(panel2:find("próximas cartas", 1, true) == nil, "wiring: ... and not the current deck order (it gets reshuffled)")
+      -- the blind is selected: the game shuffles and deals
+      G.STATE = STATES.SELECTING_HAND
+      G.GAME.round_resets.blind_states = { Small = "Current", Big = "Upcoming", Boss = "Upcoming" }
+      Standin.real_round_start(8)
+      settle()
+      t.eq(BES.seer.round_ok, 1, "wiring: the opening hand matched the predicted shuffle")
+      t.eq(BES.seer.round_miss, 0, "wiring: no opening-hand miss")
+      -- in the round, the shop that comes after it is predicted and shown
+      t.ok(BES.seer.next_shop ~= nil, "wiring: the next shop is predicted during the round")
+      t.ok(table.concat(Overlay.state.seer or {}, "\n"):find("próxima loja", 1, true) ~= nil, "wiring: ... and shown")
+      -- the round ends, the shop opens: its shelf is checked against the prediction
+      for _, c in ipairs(G.hand.cards) do G.deck.cards[#G.deck.cards + 1] = c end
+      G.hand.cards = {}
+      G.STATE = STATES.SHOP
+      G.shop_jokers = { cards = { Standin.real_shop_card(), Standin.real_shop_card() } }
+      G.shop_vouchers, G.shop_booster = { cards = {} }, { cards = {} }
+      settle()
+      t.eq(BES.seer.nshop_ok, 1, "wiring: the shop that opened is the predicted next shop")
+    end)
+    t.ok(sok, "wiring: the seer shop flow ran: " .. tostring(serr))
+    uninstall_standin()
+    G.shop_jokers, G.shop_vouchers, G.shop_booster, G.pack_cards = nil, nil, nil, nil
     love.keypressed("f4")
     t.ok(not BES.seer_on(), "wiring: F4 turns it off again")
   end)

@@ -80,6 +80,9 @@ function I.say(key, ...)
   return tf
 end
 
+-- Is there a keyed message with this key?
+function I.has(key) return msgs()[key] ~= nil end
+
 -- Pick between two literal variants by language (for short labels).
 function I.pick(en, pt) return (I.lang == "pt_BR" and pt) or en end
 

@@ -727,9 +727,23 @@ end
 -- (Packs.expected_joker_of_rarity, which floors a conditional legendary like Triboulet by its tier so it
 -- doesn't read 0 on a weak board). A legendary needs a slot -- you would sell a weak joker to land one, so a
 -- full board is a modest haircut, not zero. Was a flat 1.2.
+-- (EngineSim BR) SEER MODE: the joker a Soul / Judgement / Wraith will create is KNOWN (core/seer_peek; main.lua
+-- puts it on gs.seer_created[key]). Valued like a pack pick of that very joker (+ its edition), instead of the
+-- average of its pool. nil when there is no prediction.
+function CV.seer_joker_frac(gs, key, need, rng)
+  local it = gs and gs.seer_created and gs.seer_created[key]
+  if not (type(it) == "table" and it.joker) then return nil end
+  local JokerWorth = require("engine.joker_worth")     -- lazy: joker_worth reaches this module through its requires
+  local Eval = require("engine.eval_function")
+  local v = JokerWorth.of(gs, it.joker, "pick", { need = need or Mechanics.boss_per_hand_need(gs), samples = 6, rng = rng })
+  v = v + ((it.edition == "negative") and Eval.negative_slot_fv(gs) or Eval.edition_score_bonus(it.edition, false))
+  return math.max(0, v), it
+end
+
 function CV.soul_value(gs, need, opts)
   opts = opts or {}
-  local v = require("engine.packs").expected_joker_of_rarity(gs, "Legendary", opts)
+  local v = CV.seer_joker_frac(gs, "c_soul", need, opts.rng)
+    or require("engine.packs").expected_joker_of_rarity(gs, "Legendary", opts)
   if not v then return CV.SPECTRAL_BASE.c_soul or 1.2 end
   local slots = (gs.run and gs.run.joker_slots) or 5
   local free = slots - #(gs.jokers or {})
@@ -1003,9 +1017,10 @@ local function tarot_value(gs, key, need, rng, samples)
     local mean = (key == "c_high_priestess") and CV.mean_random_planet(gs, rng) or CV.mean_random_tarot(gs, rng)
     return landed * mean * (CV.GEN_USE_RATE[key] or 1), 0, I18N.f("%d random %s", landed, key == "c_high_priestess" and I18N.t("planets") or I18N.t("tarots"))
   elseif key == "c_judgement" then
-    local v = require("engine.packs").expected_shop_joker(gs, 1, { rng = rng, samples = 4 }) or 0
+    local kv, kit = CV.seer_joker_frac(gs, "c_judgement", need, rng)   -- (EngineSim BR) seer: the joker it makes
+    local v = kv or require("engine.packs").expected_shop_joker(gs, 1, { rng = rng, samples = 4 }) or 0
     local free = ((gs.run and gs.run.joker_slots) or 5) - #(gs.jokers or {})
-    return v * (free >= 1 and 1 or 0.7), 0, "a random joker"          -- same full-board haircut as Soul
+    return v * (free >= 1 and 1 or 0.7), 0, kit and I18N.say("seer_creates", kit.name or kit.key) or "a random joker"
   elseif key == "c_wheel_of_fortune" then
     return CV.wheel_value(gs, need, rng), 0, "1 in 4: an edition on a random joker"
   end
@@ -1087,9 +1102,11 @@ local function spectral_value(gs, key, need, rng, samples)
     -- (2026-09-26: the Rare joker is MEASURED like Soul's Legendary, and the wiped $ is priced by the same
     -- conversion a money tarot's gain uses -- were flat 0.8 and 0.04/$)
     local d = math.max(0, (gs.economy and gs.economy.dollars) or 0)
-    local rare = require("engine.packs").expected_joker_of_rarity(gs, "Rare", { rng = rng, samples = samples }) or CV.WRAITH_JOKER
+    local kv, kit = CV.seer_joker_frac(gs, "c_wraith", need, rng)       -- (EngineSim BR) seer: the Rare it makes
+    local rare = kv or require("engine.packs").expected_joker_of_rarity(gs, "Rare", { rng = rng, samples = samples }) or CV.WRAITH_JOKER
     local free = ((gs.run and gs.run.joker_slots) or 5) - #(gs.jokers or {})
     local v = rare * (free >= 1 and 1 or 0.7) - VU.income_frac(gs, d)
+    if kit then return v, 0, I18N.say("seer_creates_zero", kit.name or kit.key, d) end
     return v, 0, I18N.f("spawns a rare Joker but ZEROES your $%d", d)
   end
   if key == "c_ouija" then
@@ -1170,7 +1187,9 @@ local function spectral_value(gs, key, need, rng, samples)
     return CV.sigil_value(gs, need, { rng = rng, samples = samples }), 0, "converts ~a hand to one suit (flush enabler)"
   end
   if key == "c_soul" then
-    return CV.soul_value(gs, need, { rng = rng, samples = samples }), 0, "creates a random Legendary joker"
+    local kit = gs.seer_created and gs.seer_created.c_soul
+    return CV.soul_value(gs, need, { rng = rng, samples = samples }), 0,
+      (type(kit) == "table" and kit.name) and I18N.say("seer_creates", kit.name) or "creates a random Legendary joker"
   end
   if key == "c_cryptid" then
     return CV.cryptid_value(gs, need, { rng = rng, samples = samples }), 0, "2 copies of your best card"

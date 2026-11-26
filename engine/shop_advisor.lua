@@ -1101,7 +1101,7 @@ local function offer_pack(S, pk)
   local kind = Packs.size_of(pk.key or pk.name)             -- joker/tarot/planet/...
   local sbonus, snote = OwnedSynergy.pack_bonus(gs, kind)   -- jokers you own that fire on opening
   local cost = OwnedSynergy.pack_free(gs, kind) and 0 or (pk.cost or 4) -- Astronomer: Celestial free
-  local pv, pnote = pack_value(gs, pk, rng, kind == "joker" and swap_bar() or nil)
+  local pv, pnote, pknown = pack_value(gs, pk, rng, kind == "joker" and swap_bar() or nil)   -- pknown: seer mode
   -- B1: a Celestial pack is leveling -> amplify by the board's core (see BUY_CONSUMABLE).
   -- (2026-10-05, live UAPB3XY9 flag 7) the Celestial POOL is already valued against the measured board context
   -- (Packs planet_pool -> CV.level_gain with bctx: the board's real xmult), so the B1 estimate x1.9 per xmult joker
@@ -1138,7 +1138,8 @@ local function offer_pack(S, pk)
   -- is exactly the winners' play -- and the damp there is only mild anyway (0.69-1.0), so this is a
   -- safe, narrow correctness gate, not a licence to gamble when broke.
   local directed_level = (kind == "planet") and BuildPlan.level_push_active(gs)
-  if not final and not directed_level and not (pace and pace.urgent) and dollars(gs) < dollar_cap and dollar_cap > 0 then
+  -- (EngineSim BR) a pack whose contents the seer KNOWS is not a gamble: no poverty damp on it
+  if not final and not directed_level and not pknown and not (pace and pace.urgent) and dollars(gs) < dollar_cap and dollar_cap > 0 then
     -- steeper than linear (^1.6): the human buys few packs until NEAR the cap, then ramps up
     -- (measured 6% poor -> ~20% rich), so the damp must bite hardest well below the cap and
     -- fade only as the bankroll approaches it.
@@ -1169,6 +1170,36 @@ end
 -- earns no interest, so churning is nearly free), and raised when survival is
 -- AT RISK (you need to find help or you die). So rerolling on a thin, safe
 -- bankroll is discouraged; rerolling when rich or desperate is allowed.
+-- (EngineSim BR) SEER: the next rerolls are KNOWN (core/seer_peek, put on shop.seer_rerolls by main.lua). Instead of
+-- the expected best joker of a random shop, take the best joker the next SEER_REROLL_DEPTH rerolls really put on the
+-- shelf -- valued like a shop buy (JokerWorth "buy" + its edition), only if it is still affordable after the rerolls
+-- it takes to reach it, and net of the money of the EXTRA rerolls (each paid reroll costs $1 more than the last).
+-- Returns best (fraction of a boss hand), the reroll count to reach it, the item; nil when nothing is known.
+SA.SEER_REROLL_DEPTH = 3
+SA.SEER_REROLL_DISCOUNT = 0.9   -- a known roll is no gamble; the remaining discount: a fresh shop comes next round
+local function seer_reroll_best(S, rcost)
+  local gs, rng, credit = S.gs, S.rng, S.credit or 0
+  local known = S.shop and S.shop.seer_rerolls
+  if type(known) ~= "table" or type(known[1]) ~= "table" then return nil end
+  local best, best_r, best_it = 0, 1, nil
+  local spent, price = 0, rcost
+  for r = 1, math.min(#known, SA.SEER_REROLL_DEPTH) do
+    spent = spent + price
+    -- the following reroll: $1 more after a paid one; after a free one (Chaos) the normal price, about the base
+    price = (price > 0) and (price + 1) or SA.REROLL_BASE_COST
+    for _, it in ipairs(known[r]) do
+      if it.joker and not JokerData.is_unmodelled(it.key) and dollars(gs) - spent - (it.cost or 0) >= -credit then
+        local v = JokerWorth.of(gs, it.joker, "buy", { rng = rng, pace = S.pace })
+        v = v + ((it.edition == "negative") and Eval.negative_slot_fv(gs) or Eval.edition_score_bonus(it.edition, false))
+        v = v - VU.dollars_to_frac(gs, spent - rcost)   -- the extra rerolls beyond this one
+        if v > best then best, best_r, best_it = v, r, it end
+      end
+    end
+  end
+  return best, best_r, best_it
+end
+SA._seer_reroll_best = seer_reroll_best   -- (tests)
+
 local function offer_reroll(S)
   local gs, shop, credit, reserve, swap_bar, rng = S.gs, S.shop, S.credit, S.reserve, S.swap_bar, S.rng
   local best_offer, reserve_target, final, secure = S.best_offer, S.reserve_target, S.final, S.secure
@@ -1179,10 +1210,12 @@ local function offer_reroll(S)
   if rcost and ShopState.affordable(gs, rcost, credit) and (dollars(gs) - rcost) >= reserve - credit then
     local n_slots = math.max(2, #(shop.jokers or {}) + #(shop.consumables or {}))
     local bar = swap_bar()
-    local e_best = Packs.expected_shop_joker(gs, n_slots, { samples = 3, measure_count = SA.REROLL_DRAWS, rng = rng, swap_bar = bar }) or 0
+    local seer_best, seer_r, seer_it = seer_reroll_best(S, rcost)
+    local e_best = seer_best
+      or Packs.expected_shop_joker(gs, n_slots, { samples = 3, measure_count = SA.REROLL_DRAWS, rng = rng, swap_bar = bar }) or 0
     -- realisable only to the extent you can still buy a joker after rerolling
     local buy_budget = dollars(gs) - rcost - reserve
-    local realizable = clamp(buy_budget / SA.TYPICAL_JOKER_COST, 0, 1)
+    local realizable = clamp(buy_budget / ((seer_it and seer_it.cost and math.max(1, seer_it.cost)) or SA.TYPICAL_JOKER_COST), 0, 1)
     local improvement = math.max(0, e_best - best_offer)   -- over the current best buy
     local above_cap = (dollars(gs) - rcost) >= reserve_target
     -- free reroll -> always willing; rich (above cap) -> willing but not maximal; else low
@@ -1206,16 +1239,26 @@ local function offer_reroll(S)
     -- decaying toward the floor as the cost rises. A free reroll (rcost 0) is exempt (appetite 1).
     local escalation = (rcost <= 0 or final) and 1
       or clamp(SA.REROLL_BASE_COST / rcost, SA.REROLL_ESCALATION_FLOOR, 1)
-    local value = appetite * escalation * realizable * SA.REROLL_DISCOUNT * w_score * 5 * eff_improvement
+    local discount = seer_best and SA.SEER_REROLL_DISCOUNT or SA.REROLL_DISCOUNT
+    local value = appetite * escalation * realizable * discount * w_score * 5 * eff_improvement
       + w_score * 5 * rbonus - net_cost(rcost) - econ_floor_penalty(gs, rcost)
     local gate = (rcost == 0 and I18N.t("free reroll")) or (final and I18N.t("final shop -- spare money buys nothing later"))
       or (above_cap and I18N.t("above interest cap"))
       or (not secure and I18N.t("at risk -- need a better joker")) or I18N.t("below cap & safe -- hold")
     if rnote ~= "" and rnote then gate = gate .. ", " .. rnote end
-    local rentry = {
-      type = "REROLL", cost = rcost, value = value,
+    local reason
+    if seer_best and seer_it then
+      reason = I18N.say("seer_reroll_reason", rcost, seer_it.name or seer_it.key or "?", seer_r,
+        math.max(0, e_best) * 100, improvement * 100)
+    elseif seer_best then
+      reason = I18N.say("seer_reroll_nothing", rcost, math.min(#shop.seer_rerolls, SA.SEER_REROLL_DEPTH))
+    else
       reason = I18N.f("Reroll ($%d) — expected best ~%.0f%% of a boss hand (+%.0f%% over current; %s).",
-        rcost, math.max(0, e_best) * 100, improvement * 100, bar and I18N.f("%s; net of replacing your weakest", gate) or gate),
+        rcost, math.max(0, e_best) * 100, improvement * 100, bar and I18N.f("%s; net of replacing your weakest", gate) or gate)
+    end
+    local rentry = {
+      type = "REROLL", cost = rcost, value = value, reason = reason,
+      seer_target = seer_it and { key = seer_it.key, name = seer_it.name, rerolls = seer_r } or nil,
     }
     if Flags.global("BES_VALUE_DEBUG") then   -- read-only decomposition (same pattern as the BUY_JOKER dbg)
       rentry.dbg = { e_best = e_best, best_offer = best_offer, improvement = improvement, eff = eff_improvement,

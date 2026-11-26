@@ -428,10 +428,51 @@ function P.expected_joker_of_rarity(gs, rarity, opts)
   return total / M
 end
 
+-- ---- (EngineSim BR) seer mode: a pack whose contents are KNOWN ---------------------------------------------------
+-- core/seer_peek predicts the cards inside a pack before it is opened; main.lua puts them on pk.seer.items, in the
+-- same shape as an OPEN pack's items (gs.pack.items). Such a pack is worth exactly what the pack-open advisor would
+-- TAKE from those cards -- the valuation used once the pack is really open -- instead of the average over its pool.
+-- Returns value (fraction of a boss hand), the advisor's answer, the names of the picks; nil when it cannot tell.
+function P.known_value(gs, pk, opts)
+  local items = pk and pk.seer and pk.seer.items
+  if type(items) ~= "table" or #items == 0 then return nil end
+  local _, _, k = P.size_of(pk.key or pk.name)
+  local PO = require("engine.pack_open_advisor")   -- lazy: the pack advisor reaches this module through its requires
+  local Progress = require("util.progress")
+  local view = {}
+  for key, v in pairs(gs) do view[key] = v end
+  local copies = {}
+  for i, it in ipairs(items) do
+    local c = {}
+    for a, b in pairs(it) do c[a] = b end
+    copies[i] = c
+  end
+  view.pack = { items = copies, picks_left = math.min(k, #copies) }
+  local armed = Progress.frac
+  Progress.frac = nil                               -- the caller's progress bar is not this pack's
+  local ok, rec = pcall(PO.recommend, view, { cheap = opts and opts.cheap })
+  Progress.frac = armed
+  if not ok or type(rec) ~= "table" then return nil end
+  local v, names = 0, {}
+  if not rec.skip then
+    for _, pick in ipairs(rec.picks or {}) do
+      v = v + math.max(0, pick.v or 0)
+      names[#names + 1] = pick.name or pick.key
+    end
+  end
+  return v, rec, names
+end
+
 -- ---- top-level value --------------------------------------------------------
 -- value(gs, pk, opts) -> value(fraction of a boss hand), note
 function P.value(gs, pk, opts)
   opts = opts or {}
+  if pk and pk.seer then
+    local v, _, names = P.known_value(gs, pk, opts)
+    if v then
+      return v, (#names > 0) and I18N.say("seer_pack_pick", table.concat(names, ", ")) or I18N.say("seer_pack_skip"), true
+    end
+  end
   local kind, n, k = P.size_of(pk.key or pk.name)
   local pool, note
   if kind == "planet" then

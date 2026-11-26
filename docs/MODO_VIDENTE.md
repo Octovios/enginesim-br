@@ -28,13 +28,13 @@ Duas consequências importantes:
 
 No começo de cada rodada o jogo embaralha o baralho **uma vez** (`G.deck:shuffle('nr'..ante)`) e depois **sempre
 compra a última carta** de `G.deck.cards` (a função `CardArea:remove_card` pega `cards[#cards]` numa área do tipo
-baralho). Ou seja: a lista `G.deck.cards`, na ordem em que está, já **é o futuro** — a última carta é a próxima que
-vai para a sua mão.
+baralho). Ou seja: durante a rodada, a lista `G.deck.cards`, na ordem em que está, já **é o futuro** — a última carta
+é a próxima que vai para a sua mão.
 
 O motor original lia essa lista (`gs.remaining` em `core/state_extraction.lua`), mas a tratava como um monte
 desconhecido e **embaralhava ao acaso milhares de vezes** para estimar médias (Monte-Carlo). No modo vidente:
 
-- `engine/seer.lua` marca a lista como **"ordem conhecida"** (`Seer.mark`);
+- `engine/seer.lua` marca a lista como **"ordem conhecida"** (`Seer.mark`) — só **dentro da rodada**;
 - os lugares do motor que sorteavam cartas — avaliação de descarte (`engine/discard_value.lua`), simulação de
   sobrevivência (`engine/simulation.lua`) e busca (`engine/search.lua`) — chamam `Seer.order(...)` em vez de
   embaralhar: uma lista conhecida volta **na ordem real**;
@@ -67,24 +67,139 @@ O **próximo chefe** (`Extract.peek_next_boss`) usa a mesma ideia com a função
 em 1, chama a função, e restaura tudo que ela mexe (fluxo `'boss'`, contagem de chefes usados, ante). É
 experimental: um reroll de chefe (Boss Tag, Director's Cut) muda o resultado.
 
-## 4. O que (ainda) não dá para prever assim
+## 4. Nível 3 — o que vem nos pacotes, na loja e nas tags
 
-- **A próxima loja depois de um reroll** e **o conteúdo de um pacote antes de comprar**: dependem de vários fluxos
-  ao mesmo tempo, das cartas que você já tem (o jogo não repete coringas) e do Steamodded, que reescreve a criação de
-  cartas. É o próximo passo possível, com o mesmo método de salvar/restaurar estado.
-- **Rodadas futuras**: o embaralhamento da próxima rodada só acontece quando ela começa (e depende de quais cartas
-  estão no baralho), então o mod só vê a ordem da rodada atual.
+Tudo isso está em **`core/seer_peek.lua`**. A ideia é a mesma da seção 3, só que agora o mod precisa refazer a
+**receita inteira** com que o jogo cria uma carta, porque uma carta usa **vários fluxos** ao mesmo tempo.
 
-## 5. Onde mexer para aprender
+### 4.1 A receita de uma carta
+
+O jogo cria cartas com `create_card` (em `functions/common_events.lua`; o Steamodded remenda essa função com os
+arquivos `lovely/center.toml`, `pool.toml`, `rarity.toml`, `sticker.toml` e `edition.toml`). Para um pacote, cada
+carta passa por estes passos — cada um com **o seu fluxo**:
+
+| Passo | Fluxo (ante 1, por exemplo) | O que decide |
+|---|---|---|
+| A Alma / Buraco Negro | `soul_Tarot1`, `soul_Spectral1`, `soul_Planet1` | se o valor passar de 0,997 a carta vira A Alma (ou o Buraco Negro) |
+| raridade (só coringas) | `rarity1buf` | Comum (até 0,7), Incomum (até 0,95) ou Rara |
+| qual carta | `Tarotar11`, `Planetpl11`, `Joker1buf1`, `Spectralspe1`... | sorteia na lista de cartas possíveis |
+| re-sorteio | `Joker1buf1_resample2`, `_resample3`... | quando caiu numa carta "indisponível" |
+| edição (coringas) | `edibuf1` | Laminado, Holográfico, Policromático, Negativo |
+| adesivos (fichas altas) | `packetper1`, `packssjr1` | Eterno, Perecível, Alugado |
+| face (cartas comuns) | `frontsta1` | o valor e o naipe |
+
+A parte do meio do nome é **de onde a carta vem**: `ar1` = pacote Arcana, `pl1` = Celestial, `buf` = Bufão,
+`spe` = Espectral, `sta` = Padrão, `sho` = loja. Por isso um pacote Arcana e um tarô avulso da loja **não disputam**
+o mesmo fluxo.
+
+E tem a regra que deixa tudo interessante: **o jogo nunca oferece uma carta que já está "fora"** — com você, na
+prateleira da loja, ou mais cedo **no mesmo pacote**. Essa lista é `G.GAME.used_jokers` (o nome engana: vale para
+tarôs e planetas também). Toda carta criada entra nela na hora (`Card:set_ability`) e sai quando some
+(`Card:remove`, se você não tiver outra cópia). É por isso que um pacote nunca repete carta.
+
+### 4.2 A caixa de areia (sandbox)
+
+O mod **não chama** `create_card`: ela cria um objeto `Card` de verdade (sprite, som, "descoberta" na coleção,
+conquistas) e gastaria as tags da loja. Em vez disso, `Peek.sandbox` faz:
+
+```lua
+local saved_pr, saved_uj = copy(G.GAME.pseudorandom), copy(G.GAME.used_jokers)   -- 1. guarda os DOIS
+local ok, res = pcall(fn)                                                       -- 2. refaz a receita
+put_back(G.GAME.pseudorandom, saved_pr)                                         -- 3. devolve tudo
+put_back(G.GAME.used_jokers, saved_uj)                                          --    (e apaga o que foi criado)
+```
+
+E dentro dela a receita usa **as funções do próprio jogo** — `get_current_pool` (a lista de cartas possíveis),
+`pseudorandom_element` (sorteia nela), `pseudoseed`, `pseudorandom`, `poll_edition`, `SMODS.poll_seal` — na mesma
+ordem que o jogo usa. A receita de cada pacote é a do próprio pacote (`center:create_card`, no
+`src/game_object.lua` do Steamodded): é ela que rola o Omen Globe (Arcana com Espectral), o Telescope (Celestial com
+o planeta da sua mão mais jogada) e a edição/selo/aprimoramento das cartas do pacote Padrão.
+
+### 4.3 O que o mod prevê com isso
+
+- **Pacotes da loja, antes de comprar** (`Peek.pack`): as cartas, na ordem. Dois pacotes do mesmo tipo usam os mesmos
+  fluxos: a previsão vale para **o primeiro que você abrir**.
+- **Os próximos 3 rerolls** (`Peek.rerolls`): `create_card_for_shop` (em `functions/UI_definitions.lua` e
+  `lovely/shop.toml`) sorteia o **tipo** da carta pelo fluxo `cdt1` (coringa, tarô, planeta... pelas taxas da loja),
+  depois a carta com o sufixo `sho`. Um reroll **primeiro tira** as cartas da prateleira (elas voltam a poder sair) e
+  depois dá `joker_max` cartas novas.
+- **A próxima loja** (`Peek.next_shop`): o mesmo, numa prateleira vazia. Depois de um Chefe a ante já subiu quando a
+  loja abre, então os fluxos são os da ante seguinte.
+- **O que a tag de pular entrega** (`Peek.tag`): Charm/Meteoro/Etérea/Bufão/Padrão abrem um pacote na hora; Top-up
+  cria até 2 Comuns na hora; Rara/Incomum põem um coringa grátis na próxima loja.
+- **O coringa que A Alma, o Julgamento e o Espectro criam** (`Peek.created`): o Lendário da Alma sai do fluxo
+  `Joker4`, **sem a ante no nome** — vale para a run inteira (a 1ª Alma da seed dá o mesmo Lendário em qualquer
+  ante, a não ser que você já tenha esse Lendário; a edição dele, essa sim, depende da ante).
+
+### 4.4 Como o motor usa
+
+- Um pacote conhecido vale **exatamente o que você pegaria dele** (`engine/packs.lua` → `P.known_value` pergunta ao
+  mesmo conselheiro que decide quando o pacote está aberto) — e não sofre mais o desconto de "aposta" de quem está
+  com pouco dinheiro.
+- O reroll vale **o melhor coringa que os próximos rerolls realmente trazem** (`engine/shop_advisor.lua` →
+  `seer_reroll_best`), se der para comprá-lo depois, descontando o preço dos rerolls extras.
+- A tag vale o que entrega (`engine/tags.lua` → `Tags.known_value`), e A Alma/Julgamento/Espectro valem o coringa que
+  criam (`engine/consumable_value.lua` → `CV.seer_joker_frac`).
+
+### 4.5 A autoconferência
+
+`BES.seer_check_shop` (em `main.lua`) guarda cada previsão e compara quando a coisa acontece: o pacote que abriu
+(o Steamodded guarda qual foi em `SMODS.OPENED_BOOSTER`), a prateleira depois de um reroll (o contador de rerolls da
+run, `G.GAME.round_scores.times_rerolled`, subiu 1) e a primeira prateleira de uma loja nova. Duas falhas, mais
+falhas que acertos → aquela previsão é desligada e o painel avisa.
+
+## 5. Nível 4 — a mão inicial da próxima rodada
+
+A versão anterior deste guia dizia que a próxima rodada não dava para prever. **Dá** — e a explicação é ótima para
+aprender. O embaralhamento do começo da rodada é `pseudoshuffle(cartas, semente)`, e ele faz **duas** coisas:
+
+```lua
+table.sort(list, function(a, b) return a.sort_id < b.sort_id end)   -- 1. põe as cartas numa ordem fixa
+for i = #list, 2, -1 do                                             -- 2. Fisher-Yates com a semente
+  local j = math.random(i); list[i], list[j] = list[j], list[i]
+end
+```
+
+O passo 1 apaga a ordem em que as cartas estavam: o resultado só depende de **quais** cartas estão no baralho e do
+próximo valor do fluxo `nr<ante>`. Então `Peek.next_round` copia a lista, chama o `pseudoshuffle` do próprio jogo
+na cópia (dentro da caixa de areia) e lê a ordem de compra. Na loja e na escolha do blind o painel mostra a mão
+inicial da próxima rodada, e no começo da rodada o mod confere (`BES.seer_check_round`).
+
+Exceção: o **Marble Joker** põe uma carta de Pedra no baralho ao selecionar o blind, **antes** do embaralhamento —
+com ele, o mod não prevê.
+
+## 6. Curiosidades que caem disso
+
+- **Pular o Small Blind não "perde" a loja dele.** A loja depois do Big Blind sai dos mesmos fluxos (mesma ante),
+  então mostra as cartas que a loja do Small mostraria. A mão inicial também: a rodada do Big usa o valor de `nr1`
+  que a do Small usaria. Pular o **Big** Blind é diferente: a próxima loja vem depois do Chefe, já na ante seguinte.
+- **Abrir um pacote quase não muda os rerolls** (e rerolar quase não muda os pacotes): os fluxos são diferentes
+  (`ar1` × `sho`). Só a carta que você **guarda** conta: ela fica "fora" e não pode sair na loja.
+- **Comprar um coringa muda o próximo pacote Bufão**: ele passa a estar "fora" e não pode sair.
+
+## 7. O que ainda não dá para prever
+
+- Quando **outro mod** liga o sistema de pesos de sorteio do Steamodded (`SMODS.optional_features.object_weights`):
+  a receita muda inteira. O painel avisa.
+- **Pacotes de outros mods** e o reroll quando uma **Tag Rara/Incomum** ainda vai trocar uma carta da loja.
+- Coisas que acontecem **entre** a previsão e o fato: um tarô criado pela Cartomante ou pela 8 Ball e guardado muda
+  quais tarôs a próxima loja pode ter; a Hallucination cria um tarô quando você abre um pacote (raramente muda o
+  pacote). É para isso que existe a autoconferência.
+- Lojas e rodadas **depois da próxima**, e o voucher da próxima ante.
+
+## 8. Onde mexer para aprender
 
 | Arquivo | O que tem |
 |---|---|
-| `core/state_extraction.lua` | o **único** arquivo que lê o jogo (`G`): `peek_rolls`, `peek_next_boss` |
-| `engine/seer.lua` | ordem conhecida, rolagens por fluxo, linhas do painel (puro, testável sem o jogo) |
+| `core/state_extraction.lua` | o arquivo que lê o estado do jogo (`G`): `peek_rolls`, `peek_next_boss` |
+| `core/seer_peek.lua` | a caixa de areia e as receitas: pacotes, rerolls, próxima loja, tags, Alma, próxima rodada |
+| `engine/seer.lua` | ordem conhecida, rolagens por fluxo (puro, testável sem o jogo) |
 | `engine/hand_eval.lua` | a pontuação; procure `seer_effect` |
+| `engine/packs.lua`, `engine/shop_advisor.lua`, `engine/tags.lua` | onde as previsões viram decisão (procure `seer`) |
 | `main.lua` | liga/desliga (F4), autoconferência, painel "Futuro" |
-| `tests/test_seer.lua` | testes que rodam sem o jogo (`lua5.4 tests/runner.lua`) |
+| `tests/standin_game.lua` | um "jogo de mentira" com as funções de sorteio e as receitas, e o jogo "de verdade" para comparar |
+| `tests/test_seer.lua`, `tests/test_seer_shop.lua` | os testes (`lua5.4 tests/runner.lua`) |
 
 Dica para experimentar: com um mod de console (como o DebugPlus) ou um `print` temporário no código,
-`G.GAME.pseudorandom` mostra todos os fluxos que a run já usou, e `G.deck.cards[#G.deck.cards].base` é a próxima
-carta que você vai comprar.
+`G.GAME.pseudorandom` mostra todos os fluxos que a run já usou (procure `Tarotar1`, `cdt1`, `Joker4`...), e
+`G.deck.cards[#G.deck.cards].base` é a próxima carta que você vai comprar.

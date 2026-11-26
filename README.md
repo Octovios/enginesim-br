@@ -22,7 +22,7 @@ com o seu baralho real (Monte-Carlo) e compara as opções — o mesmo princípi
 | **A Morte (Death)** | Diz **qual carta vira qual** e, se a ordem na mão estiver errada, manda **arrastar a carta para a ESQUERDA** antes de usar. As tags nas cartas mostram `1 VIRA` / `2 MODELO` e `<< ARRASTE` em vermelho. |
 | **Builds** | 23 builds catalogadas (flush por naipe, sequência, pares, full house, quadra, quina, realeza, Reis de Aço/Baron+Mime, Fibonacci, números pares, Hack, Sorte, Vidro, Pedra, Dinheiro, Descartes, Planetas, Repetições, Carta Alta). Cada uma é avaliada pelo **seu baralho**, pelos coringas que você tem, pelos que **estão na loja agora** e pelos que **já apareceram na loja nesta run**. O painel mostra as 3 melhores com o que você já tem e o que procurar. |
 | **Forçar build (F3)** | Escolha uma build para forçar (no início ou no meio da run). O motor passa a **puxar compras, vendas, pacotes, planetas e tarôs** para ela: peças principais ganham prioridade e não são vendidas, a Morte/Força/Enforcado miram o naipe/valor da build, os tarôs certos (ex.: O Carro / The Chariot, que cria cartas de Aço, para Reis de Aço) sobem de valor. Dá para deixar uma build padrão para toda run nova nas configurações. |
-| **Modo vidente (F4)** | Opcional, desligado por padrão. Usa a **ordem real do baralho** (sabe exatamente quais cartas vêm em cada descarte) e as **próximas rolagens de sorte** (cartas da Sorte, Misprint, Bloodstone, Vidro, Wheel of Fortune, Gros Michel…), e mostra o próximo chefe. Confere sozinho se a previsão bate com o jogo. Como funciona, passo a passo: [`docs/MODO_VIDENTE.md`](docs/MODO_VIDENTE.md). |
+| **Modo vidente (F4)** | Opcional, desligado por padrão. Usa a **ordem real do baralho** (sabe exatamente quais cartas vêm em cada descarte) e as **próximas rolagens de sorte** (cartas da Sorte, Misprint, Bloodstone, Vidro, Wheel of Fortune, Gros Michel…). Vê também **o que vem dentro de cada pacote antes de comprar** (inclusive A Alma e o Buraco Negro), **o que os próximos 3 rerolls da loja trazem**, **o que uma tag de pular entrega** (o pacote da Tag Charm/Meteoro/Etérea/Bufão/Padrão, o coringa da Tag Rara/Incomum/Top-up), **qual coringa A Alma, o Julgamento e o Espectro vão criar**, **a próxima loja** e **a mão inicial da próxima rodada** — e usa isso nas decisões (comprar pacote, rerolar, pular). Confere sozinho cada previsão com o que o jogo entrega e desliga a parte que errar. Como funciona, passo a passo: [`docs/MODO_VIDENTE.md`](docs/MODO_VIDENTE.md). |
 | **Ordem dos coringas** | Calcula a melhor ordem dos coringas sobre várias mãos típicas do seu baralho (quem soma Fichas/Mult antes, quem multiplica depois, copiadores no lugar certo) e mostra na escolha do blind e na loja, com números em cima dos coringas. O autoplay arruma sozinho. Na jogada, reordena mesmo quando a mão já vence (vale para as próximas mãos). |
 | **Observatório** | O voucher Observatório agora é calculado (x1.5 por planeta guardado da mão jogada) e o motor para de mandar usar esses planetas. |
 | **Perkeo** | Cópias Negativas de consumíveis passaram a ser lidas do jogo. |
@@ -30,6 +30,12 @@ com o seu baralho real (Monte-Carlo) e compara as opções — o mesmo princípi
 
 ## Novidades
 
+- **0.9.0** — o modo vidente passa a ver **dentro dos pacotes** (antes de comprar e o da tag de pular), **os próximos
+  rerolls da loja**, **a próxima loja**, **a mão inicial da próxima rodada** e **o coringa que A Alma / Julgamento /
+  Espectro vão criar**. O motor usa isso: um pacote vale exatamente o que você pegaria dele, o reroll vale o coringa
+  que ele realmente traz (até 3 rerolls à frente, descontando o preço), a tag vale o que ela entrega. Tudo é conferido
+  com o que o jogo mostra depois. Correção: na loja e na escolha do blind o painel mostrava "próximas cartas" da ordem
+  atual do baralho, que o jogo embaralha de novo no começo da rodada — agora mostra a mão inicial certa.
 - **0.8.0** — **modo vidente** (F4): ordem real do baralho nas decisões de jogar/descartar, sorte prevista
   (Lucky, Misprint, Bloodstone, Vidro, Wheel of Fortune…), próximo chefe, autoconferência e um guia de como o
   sorteio do Balatro funciona ([`docs/MODO_VIDENTE.md`](docs/MODO_VIDENTE.md)).
@@ -94,11 +100,14 @@ No jogo, tags coloridas marcam exatamente a carta, o item da loja ou o botão re
 ## Limitações honestas
 
 - O jogo não pôde ser executado no ambiente onde este fork foi feito: toda a lógica foi testada sem o jogo
-  (2.000 testes automáticos), mas campos lidos do jogo marcados `-- VERIFY` em `core/state_extraction.lua` (ficha,
+  (mais de 2.800 testes automáticos), mas campos lidos do jogo marcados `-- VERIFY` em `core/state_extraction.lua` (ficha,
   recompensas, nomes traduzidos) só se confirmam rodando no Balatro. Se algo aparecer errado, aperte **F5** e
   verifique o log do Lovely.
 - Jokers de outros mods não são modelados (pontuam zero no cálculo; o log avisa).
 - O motor vê cartas viradas para baixo por alguns chefes (vantagem conhecida do original).
+- O modo vidente não prevê quando outro mod liga o sistema de pesos de sorteio do Steamodded, pacotes de outros mods,
+  nem o reroll quando uma Tag Rara/Incomum ainda vai trocar uma carta da loja. A previsão da Tag Rara/Incomum/Top-up e
+  da próxima loja é marcada como experimental: cartas criadas ou usadas até lá podem mudá-la (o painel confere).
 - Forçar uma build é uma escolha sua: se a build não aparecer, o motor ainda tenta sobreviver, mas ele vai priorizar
   as peças dela mesmo quando outra opção pontuaria mais agora.
 
@@ -113,7 +122,9 @@ luajit tests/runner_sim.lua  # testes do simulador (demorados)
 
 Arquivos novos deste fork: `engine/run_context.lua` (ficha/baralho), `engine/scaling_growth.lua` (crescimento dos
 coringas), `engine/archetypes.lua` e `engine/build_advisor.lua` (builds), `ui/build_menu.lua` (F3),
-`util/i18n.lua`, `util/i18n_msgs.lua`, `util/lang_pt_br.lua` (tradução), `tests/test_br.lua`.
+`util/i18n.lua`, `util/i18n_msgs.lua`, `util/lang_pt_br.lua` (tradução), `engine/seer.lua` e `core/seer_peek.lua`
+(modo vidente), `tests/test_br.lua`, `tests/test_seer.lua`, `tests/test_seer_shop.lua` e `tests/standin_game.lua`
+(um "jogo de mentira" com as funções de sorteio do Balatro, para testar o vidente sem o jogo).
 
 ## Créditos
 

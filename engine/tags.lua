@@ -196,11 +196,46 @@ local TAG = {
 
 function Tags.get(key) return key and TAG[key] or nil end
 
+-- (EngineSim BR) SEER MODE: what the skip tag hands over is KNOWN (core/seer_peek; main.lua puts it on
+-- gs.blind.skip_tag_seer = { tag, kind = "pack" | "jokers", pack, items }). A pack tag is worth the picks the pack-open
+-- advisor would make from the predicted cards (engine/packs.known_value); a joker tag (Rare / Uncommon / Top-up) the
+-- predicted jokers themselves, measured like a pack pick, as many as fit. Dollars; nil when it cannot tell.
+function Tags.known_value(gs, seer, opts)
+  if not (has_deck(gs) and type(seer) == "table" and type(seer.items) == "table") then return nil end
+  if seer.kind == "pack" then
+    local frac = Packs.value(gs, { key = seer.pack, seer = seer },
+      { rng = opts and opts.rng, cache = opts and opts.cache, samples = 3 })
+    if type(frac) ~= "number" then return nil end
+    return VU.frac_to_dollars(gs, math.max(0, frac))
+  elseif seer.kind == "jokers" then
+    local JokerWorth = require("engine.joker_worth")
+    local slots = (gs.run and gs.run.joker_slots) or 5
+    local free = slots - #(gs.jokers or {})
+    local total = 0
+    for i, it in ipairs(seer.items) do
+      local neg = it.edition == "negative"
+      if it.joker and (neg or i <= free) then
+        local f = JokerWorth.of(gs, it.joker, "pick", { need = need(gs), samples = 6, rng = opts and opts.rng, cache = opts and opts.cache })
+        f = f + (neg and Eval.negative_slot_fv(gs) or Eval.edition_score_bonus(it.edition, false))
+        total = total + math.max(0, f)
+      end
+    end
+    if total <= 0 then return 2 end
+    return VU.frac_to_dollars(gs, total)
+  end
+  return nil
+end
+
 -- Returns value(dollars), name. Unknown tags get a small default. opts (rng/cache/
 -- samples) feeds the measured tags; omit it and they use their flat prior.
 function Tags.value(gs, key, opts)
   local t = TAG[key]
   if not t then return 4, "Tag" end
+  local seer = gs and gs.blind and gs.blind.skip_tag_seer
+  if seer and seer.tag == key then
+    local okk, kv = pcall(Tags.known_value, gs, seer, opts)
+    if okk and type(kv) == "number" then return kv, t.name end
+  end
   local ok, v = pcall(t.val, gs, opts)
   if not ok or type(v) ~= "number" then v = 4 end
   return v, t.name

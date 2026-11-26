@@ -82,6 +82,7 @@ local BuildAdvisor = try_require("engine.build_advisor")     -- builds: suggesti
 local Archetypes = try_require("engine.archetypes")
 local BuildMenu = try_require("ui.build_menu")               -- F3: choose a build to force
 local Seer = try_require("engine.seer")                      -- F4: seer mode (the run's real future)
+local SeerPeek = try_require("core.seer_peek")               -- seer mode: packs, rerolls and skip tags
 
 -- Monte-Carlo sample count per evaluation. Higher = smoother probabilities but
 -- more cost; the signature gate means this only runs when state changes.
@@ -253,7 +254,14 @@ end
 -- engine/seer.lua explains the idea; here the live side: switch, the luck-stream peek, and a self-check that the
 -- draw order really is the game's (after every draw, the cards that arrived must be the ones predicted -- if they
 -- are not, the order is not used and the panel says so).
-BES.seer = { ok = 0, miss = 0, bad = false, check = nil, boss = nil }
+-- shop_ok / shop_miss / shop_bad: the same self-check for the pack and reroll predictions (core/seer_peek)
+function BES.seer_fresh()
+  return { ok = 0, miss = 0, bad = false, check = nil, boss = nil,
+           shop_ok = 0, shop_miss = 0, shop_bad = false, packs = {}, reroll = nil, fut = nil,
+           round_ok = 0, round_miss = 0, round_bad = false, round_pred = nil,
+           nshop_ok = 0, nshop_miss = 0, nshop_bad = false, next_shop = nil }
+end
+BES.seer = BES.seer_fresh()
 function BES.seer_on()
   return Settings and Settings.cfg and Settings.cfg.seer_mode and true or false
 end
@@ -261,7 +269,7 @@ function BES.toggle_seer()
   if not (Settings and Settings.cfg) then return end
   Settings.cfg.seer_mode = not Settings.cfg.seer_mode
   if Settings.save then Settings.save() end
-  BES.seer = { ok = 0, miss = 0, bad = false, check = nil, boss = nil }
+  BES.seer = BES.seer_fresh()
   if BES.tracker then BES.tracker.reset() end
   local now = (love and love.timer and love.timer.getTime and love.timer.getTime()) or 0
   if Overlay and Overlay.notify and I18N then
@@ -280,6 +288,8 @@ end
 -- After each draw: were the cards that arrived the first ones of the predicted order?
 function BES.seer_validate(gs)
   local S = BES.seer
+  -- only inside a round: a pack's hand in the shop, or the round-start shuffle, are other deals
+  if not BES.in_round(gs) then S.check = nil; return end
   local seed, round = gs.meta and gs.meta.seed_hash, gs.meta and gs.meta.round
   local hand = id_set(gs.hand)
   local chk = S.check
@@ -306,21 +316,286 @@ function BES.seer_validate(gs)
   S.check = { seed = seed, round = round, pred = pred, hand = hand, deck = id_set(gs.remaining) }
 end
 
+-- ---- (EngineSim BR) seer mode, level 3: packs, shop rerolls and skip tags (core/seer_peek) ----------------------------
+-- A cheap fingerprint of everything a prediction depends on: the streams (any card the game makes advances one), the
+-- cards that are "out" (used_jokers), the shelf, the packs, the skip tag. Predictions are only recomputed when it moves.
+local function future_sig(gs)
+  local G = _G.G
+  local GAME = G and G.GAME
+  if not GAME then return nil end
+  local sum, n = 0, 0
+  for _, v in pairs(GAME.pseudorandom or {}) do if type(v) == "number" then sum = sum + v; n = n + 1 end end
+  local used = 0
+  for _ in pairs(GAME.used_jokers or {}) do used = used + 1 end
+  local parts = { tostring(gs.meta and gs.meta.seed_hash), tostring(gs.meta and gs.meta.ante), tostring(gs.meta and gs.meta.state),
+    string.format("%.9f", sum), n, used, tostring(gs.blind and gs.blind.skip_tag), tostring(gs.blind and gs.blind.blind_type),
+    #(gs.jokers or {}), #(gs.consumables or {}), #(gs.deck or {}), #(gs.remaining or {}), #(gs.hand or {}) }
+  for _, sl in ipairs((gs.shop and gs.shop.slots) or {}) do parts[#parts + 1] = tostring(sl.key) end
+  for _, pk in ipairs((gs.shop and gs.shop.boosters) or {}) do parts[#parts + 1] = tostring(pk.key) .. "/" .. tostring(pk.size) end
+  return table.concat(parts, "|")
+end
+
+-- Was the last prediction right? A pack that just opened is compared with the prediction for its family; a reroll that
+-- just happened (the run's reroll count grew by one) with the predicted first reroll. Two misses, more misses than
+-- hits: the predictions are switched off (BES.seer.shop_bad) and the panel says so.
+function BES.seer_check_shop(gs)
+  local S = BES.seer
+  if not SeerPeek then return end
+  local seed = gs.meta and gs.meta.seed_hash
+  -- c = the counters' prefix: "shop" (packs, rerolls) or "nshop" (the next shop, seen from the round: cards made or
+  -- used before the shop opens can change it, so its misses only switch IT off)
+  local function score(pred, got, what, c)
+    c = c or "shop"
+    local same = #pred == #got
+    for i = 1, #pred do if pred[i] ~= got[i] then same = false end end
+    if same then S[c .. "_ok"] = (S[c .. "_ok"] or 0) + 1
+    else
+      S[c .. "_miss"] = (S[c .. "_miss"] or 0) + 1
+      local ok, miss = S[c .. "_ok"] or 0, S[c .. "_miss"]
+      Log.warn(string.format("seer: the %s did not match the prediction (%d ok, %d miss): predicted %s, got %s",
+        what, ok, miss, table.concat(pred, ","), table.concat(got, ",")))
+      if miss >= 2 and miss > ok then S[c .. "_bad"] = true end
+    end
+  end
+  if gs.pack and gs.pack.items and #gs.pack.items > 0 then
+    if not S.pack_checked then
+      S.pack_checked = true
+      local pred = gs.pack.booster_key and S.packs[SeerPeek.family(gs.pack.booster_key)]
+      if pred and pred.seed == seed and #gs.pack.items == #pred.sigs then
+        score(pred.sigs, SeerPeek.sigs(gs.pack.items), "pack")
+      end
+      S.packs = {}
+    end
+  else
+    S.pack_checked = false
+  end
+  -- the first full sight of a new shop: was it the predicted next shop?
+  if gs.shop then
+    local ns = S.next_shop
+    if ns and ns.seed == seed and #(gs.shop.slots or {}) >= #ns.sigs and #ns.sigs > 0 then
+      score(ns.sigs, SeerPeek.sigs(gs.shop.slots), "next shop", "nshop")
+      S.next_shop = nil
+    end
+  end
+  local rr = S.reroll
+  if gs.shop and rr and rr.seed == seed and type(gs.shop.times_rerolled) == "number" and type(rr.n) == "number" then
+    if gs.shop.times_rerolled == rr.n + 1 then
+      score(rr.sigs, SeerPeek.sigs(gs.shop.slots), "reroll")
+      S.reroll = nil
+    elseif gs.shop.times_rerolled ~= rr.n then
+      S.reroll = nil
+    end
+  end
+end
+
+-- Predict (or reuse the cached prediction) and put it on the snapshot, where the advisors and the panel read it:
+--   gs.shop.boosters[i].seer = { pack = key, items }   the cards inside each pack (engine/packs.known_value)
+--   gs.shop.seer_rerolls = { {items}, {items}, ... }    the next rerolls (engine/shop_advisor offer_reroll)
+--   gs.blind.skip_tag_seer = { tag, kind, items, ... }  what the skip tag would give (engine/tags)
+--   gs.seer_next_shop = { items }                      the shelf of the shop after this blind (panel)
+--   gs.seer_next_round = { cards }                     the next round's draw order, next first (panel)
+-- and remembers each prediction in BES.seer so BES.seer_check_shop / seer_check_round can grade it later.
+BES.SEER_REROLLS = 3
+function BES.seer_future(gs)
+  local S = BES.seer
+  if not SeerPeek then return end
+  local in_shop = gs.shop ~= nil
+  local at_select = (gs.meta and gs.meta.in_blind_select) and true or false
+  local playing = not in_shop and not at_select and not gs.pack and #(gs.hand or {}) > 0
+  if not (in_shop or at_select or playing) then S.fut = nil; return end
+  local sig = future_sig(gs)
+  local fut = S.fut
+  if not (fut and fut.sig == sig) then
+    fut = { sig = sig, packs = {}, why = nil }
+    -- the shop after the blind being played (at the blind select: the one about to be played); after a Boss the
+    -- ante has gone up by the time the shop opens
+    if not S.shop_bad and not S.nshop_bad and (at_select or playing) then
+      local boss = (at_select and gs.blind and gs.blind.blind_type == "Boss") or (playing and gs.blind and gs.blind.boss)
+      fut.next_shop = SeerPeek.next_shop(boss and true or false)
+    end
+    if not S.shop_bad and not playing then
+      if in_shop then
+        for _, pk in ipairs(gs.shop.boosters or {}) do
+          local items, why = SeerPeek.pack(pk.key, pk.size)
+          if items then fut.packs[pk.key] = items else fut.why = fut.why or why end
+        end
+        local rr, why = SeerPeek.rerolls(BES.SEER_REROLLS)
+        fut.rerolls = rr
+        if not rr then fut.why = fut.why or why end
+      end
+      if at_select and gs.blind and gs.blind.skip_tag then
+        local tp, why = SeerPeek.tag(gs.blind.skip_tag, gs.blind.blind_type)
+        if tp then tp.tag = gs.blind.skip_tag; fut.tag = tp else fut.tag_why = why end
+      end
+    end
+    -- the next round's draw order (the round-start shuffle, dealt on a copy)
+    if not S.round_bad and not playing and Extract and Extract.read_card then
+      local nr, why = SeerPeek.next_round()
+      if nr then
+        local cards = {}
+        for i, c in ipairs(nr) do cards[i] = Extract.read_card(c) end
+        fut.next_round = cards
+      else
+        fut.round_why = why
+      end
+    end
+    S.fut = fut
+  end
+  -- attach, and remember what to check
+  local seed = gs.meta and gs.meta.seed_hash
+  S.packs = {}
+  if in_shop then
+    for _, pk in ipairs(gs.shop.boosters or {}) do
+      local items = fut.packs[pk.key]
+      if items then
+        pk.seer = { pack = pk.key, items = items }
+        S.packs[SeerPeek.family(pk.key)] = { seed = seed, sigs = SeerPeek.sigs(items) }
+      end
+    end
+    if fut.rerolls then
+      gs.shop.seer_rerolls = fut.rerolls
+      S.reroll = { seed = seed, n = gs.shop.times_rerolled, sigs = SeerPeek.sigs(fut.rerolls[1]) }
+    else
+      S.reroll = nil
+    end
+    gs.shop.seer_why = fut.why
+  end
+  if at_select and fut.tag then
+    gs.blind.skip_tag_seer = fut.tag
+    if fut.tag.kind == "pack" then
+      S.packs[SeerPeek.family(fut.tag.pack)] = { seed = seed, sigs = SeerPeek.sigs(fut.tag.items) }
+    end
+  end
+  if fut.next_shop then
+    gs.seer_next_shop = fut.next_shop
+    S.next_shop = { seed = seed, sigs = SeerPeek.sigs(fut.next_shop) }
+  end
+  if fut.next_round then
+    gs.seer_next_round = fut.next_round
+    local pos = {}
+    for i, c in ipairs(fut.next_round) do if c.id ~= nil then pos[c.id] = i end end
+    S.round_pred = { seed = seed, pos = pos }
+  end
+end
+
+-- Is the snapshot inside a round (a hand being played), not the shop / a pack / the blind select?
+local function in_round(gs)
+  return not gs.shop and not gs.pack and not (gs.meta and gs.meta.in_blind_select)
+end
+BES.in_round = in_round
+
+-- The first hand of the round that was predicted in the shop / at the blind select: the deck cards that arrived must
+-- be the first ones of the predicted order (a card created into the hand, like Certificate's, is not from the deck).
+function BES.seer_check_round(gs)
+  local S = BES.seer
+  local rp = S.round_pred
+  if not rp or not in_round(gs) or #(gs.hand or {}) == 0 then return end
+  S.round_pred = nil
+  if rp.seed ~= (gs.meta and gs.meta.seed_hash) then return end
+  local k, worst = 0, 0
+  for _, c in ipairs(gs.hand) do
+    local p = c.id ~= nil and rp.pos[c.id]
+    if p then
+      k = k + 1
+      if p > worst then worst = p end
+    end
+  end
+  if k == 0 then return end
+  if worst <= k then
+    S.round_ok = S.round_ok + 1
+  else
+    S.round_miss = S.round_miss + 1
+    Log.warn(string.format("seer: the opening hand did not match the predicted shuffle (%d ok, %d miss)", S.round_ok, S.round_miss))
+    if S.round_miss >= 2 and S.round_miss > S.round_ok then S.round_bad = true end
+  end
+end
+
+-- The joker a Soul / Judgement / Wraith in sight (held, in the open pack, for sale, predicted in a pack, a reroll or a
+-- tag) would create: gs.seer_created[key] = item (engine/consumable_value values the card by it).
+function BES.seer_created(gs)
+  local S = BES.seer
+  if not SeerPeek or S.shop_bad then return end
+  local want, names = {}, {}
+  local function look(list)
+    for _, it in ipairs(list or {}) do
+      if it.key and SeerPeek.CREATES[it.key] then want[it.key] = true; names[it.key] = names[it.key] or it.name end
+    end
+  end
+  look(gs.consumables)
+  look(gs.pack and gs.pack.items)
+  look(gs.shop and gs.shop.consumables)
+  for _, pk in ipairs((gs.shop and gs.shop.boosters) or {}) do look(pk.seer and pk.seer.items) end
+  for _, row in ipairs((gs.shop and gs.shop.seer_rerolls) or {}) do look(row) end
+  look(gs.blind and gs.blind.skip_tag_seer and gs.blind.skip_tag_seer.items)
+  look(gs.seer_next_shop)
+  if not next(want) then return end
+  local keys = {}
+  for k in pairs(want) do keys[#keys + 1] = k end
+  table.sort(keys)
+  local sig = tostring(future_sig(gs)) .. "|" .. table.concat(keys, ",")
+  if not (S.created and S.created.sig == sig) then
+    local out = {}
+    for _, k in ipairs(keys) do
+      local it = SeerPeek.created(k)
+      if it then it.from = names[k] or k; out[k] = it end
+    end
+    S.created = { sig = sig, items = out }
+  end
+  gs.seer_created = S.created.items
+end
+
+-- Short labels for predicted cards: "Blueprint (Foil, $10)", "The Soul *", "K♥ Gold".
+function BES.seer_items(items, with_cost)
+  local out = {}
+  for _, it in ipairs(items or {}) do
+    local s
+    if it.card then
+      s = (Cards and Cards.describe) and Cards.describe(it.card) or tostring(it.name)
+    else
+      s = it.name or it.key or "?"
+      local tags = {}
+      if it.edition then tags[#tags + 1] = I18N.say("seer_ed_" .. it.edition) end
+      if it.eternal then tags[#tags + 1] = I18N.say("seer_eternal") end
+      if it.perishable then tags[#tags + 1] = I18N.say("seer_perishable") end
+      if it.rental then tags[#tags + 1] = I18N.say("seer_rental") end
+      if with_cost and it.cost then tags[#tags + 1] = "$" .. tostring(it.cost) end
+      if #tags > 0 then s = s .. " (" .. table.concat(tags, ", ") .. ")" end
+      if it.soul or it.legendary then s = s .. " *" end
+    end
+    out[#out + 1] = s
+  end
+  return table.concat(out, ", ")
+end
+
 -- The "Future" lines of the panel popup.
 function BES.seer_lines(gs)
   if not (I18N and Seer) then return nil end
   local S = BES.seer
   local lines = { I18N.say("seer_title") }
-  if S.bad then lines[#lines + 1] = I18N.say("seer_bad")
-  elseif S.ok > 0 then lines[#lines + 1] = I18N.say("seer_confirmed", S.ok)
-  else lines[#lines + 1] = I18N.say("seer_waiting") end
   local hs = (gs.run and gs.run.hand_size) or 8
-  local next_cards = (not S.bad) and Seer.next_cards(gs, hs) or nil
+  -- in a round: the next draws; in the shop / at the blind select: the next round's opening hand (the round-start
+  -- shuffle reorders the whole deck, so the current order says nothing about it)
+  local round = in_round(gs)
+  if S.bad then lines[#lines + 1] = I18N.say("seer_bad")
+  elseif round then
+    lines[#lines + 1] = (S.ok > 0) and I18N.say("seer_confirmed", S.ok) or I18N.say("seer_waiting")
+  end
+  local next_cards = (round and not S.bad) and Seer.next_cards(gs, hs) or nil
   if next_cards and #next_cards > 0 then
     local labels = {}
     for _, c in ipairs(next_cards) do labels[#labels + 1] = Cards and Cards.label(c) or tostring(c.id) end
     lines[#lines + 1] = I18N.say("seer_next_cards", table.concat(labels, " "))
   end
+  if not round and not S.round_bad and gs.seer_next_round and #gs.seer_next_round > 0 then
+    local labels = {}
+    for i = 1, math.min(hs, #gs.seer_next_round) do
+      local c = gs.seer_next_round[i]
+      labels[#labels + 1] = Cards and Cards.label(c) or tostring(c.id)
+    end
+    lines[#lines + 1] = I18N.say("seer_next_round", table.concat(labels, " "))
+  end
+  if S.round_bad then lines[#lines + 1] = I18N.say("seer_round_bad")
+  elseif (S.round_ok or 0) > 0 then lines[#lines + 1] = I18N.say("seer_round_confirmed", S.round_ok) end
   local function seq(key, den, n, yes, no)
     local o = Seer.outcomes(gs, key, den, n)
     if not o or #o == 0 then return nil end
@@ -377,6 +652,52 @@ function BES.seer_lines(gs)
     end
   end
   if S.boss and S.boss.name then lines[#lines + 1] = I18N.say("seer_next_boss", S.boss.ante or 0, S.boss.name) end
+  -- packs, rerolls, the skip tag (core/seer_peek)
+  if S.shop_bad then
+    lines[#lines + 1] = I18N.say("seer_shop_bad")
+  else
+    local shown = false
+    for _, pk in ipairs((gs.shop and gs.shop.boosters) or {}) do
+      if pk.seer then
+        lines[#lines + 1] = I18N.say("seer_pack", pk.name or pk.key or "?", BES.seer_items(pk.seer.items))
+        shown = true
+      end
+    end
+    local rr = gs.shop and gs.shop.seer_rerolls
+    if rr then
+      for r = 1, math.min(#rr, BES.SEER_REROLLS) do
+        lines[#lines + 1] = I18N.say("seer_reroll", r, BES.seer_items(rr[r], true))
+      end
+      shown = true
+    elseif gs.shop and gs.shop.seer_why then
+      local k = "seer_shop_off_" .. tostring(gs.shop.seer_why)
+      lines[#lines + 1] = I18N.say(I18N.has and I18N.has(k) and k or "seer_shop_off_other")
+    end
+    local ck = {}
+    for k in pairs(gs.seer_created or {}) do ck[#ck + 1] = k end
+    table.sort(ck)
+    for _, k in ipairs(ck) do
+      local it = gs.seer_created[k]
+      lines[#lines + 1] = I18N.say("seer_created", it.from or k, BES.seer_items({ it }))
+      shown = true
+    end
+    if gs.seer_next_shop and #gs.seer_next_shop > 0 then
+      lines[#lines + 1] = I18N.say("seer_next_shop", BES.seer_items(gs.seer_next_shop, true))
+      shown = true
+    end
+    local tp = gs.blind and gs.blind.skip_tag_seer
+    if tp and tp.items then
+      local tag = gs.blind.skip_tag_name or tp.tag or "?"
+      if tp.kind == "pack" then
+        lines[#lines + 1] = I18N.say("seer_tag_pack", tag, BES.seer_items(tp.items))
+      elseif #tp.items > 0 then
+        lines[#lines + 1] = I18N.say(tp.next_shop and "seer_tag_shop_joker" or "seer_tag_jokers", tag, BES.seer_items(tp.items))
+      end
+      shown = true
+    end
+    local confirmed = (S.shop_ok or 0) + (S.nshop_ok or 0)
+    if shown and confirmed > 0 then lines[#lines + 1] = I18N.say("seer_shop_confirmed", confirmed) end
+  end
   return lines
 end
 
@@ -387,7 +708,9 @@ function BES.decorate(gs)
   -- seer mode: the real draw order and the next luck rolls (see engine/seer.lua)
   if Seer and BES.seer_on() then
     pcall(BES.seer_validate, gs)
-    if not BES.seer.bad and gs.remaining then Seer.mark(gs.remaining) end
+    pcall(BES.seer_check_round, gs)
+    -- the order is the real one only inside a round: the round-start shuffle reorders the deck
+    if not BES.seer.bad and gs.remaining and BES.in_round(gs) then Seer.mark(gs.remaining) end
     local okr, rolls = pcall(Extract.peek_rolls)
     if okr and rolls then gs.seer_rolls = rolls end
     local bkey = tostring(gs.meta and gs.meta.seed_hash) .. ":" .. tostring(gs.meta and gs.meta.ante) .. ":"
@@ -396,6 +719,13 @@ function BES.decorate(gs)
       local okb, nb = pcall(Extract.peek_next_boss)
       BES.seer.boss, BES.seer.boss_key = okb and nb or nil, bkey
     end
+    -- packs, rerolls, skip tags: first check the last prediction against what came, then predict again
+    local okc, errc = pcall(BES.seer_check_shop, gs)
+    local okf, errf = pcall(BES.seer_future, gs)
+    if okf then okf, errf = pcall(BES.seer_created, gs) end
+    local err = (not okc and ("check: " .. tostring(errc))) or (not okf and ("prediction: " .. tostring(errf))) or nil
+    if err and err ~= BES.seer.last_err then Log.warn("seer " .. err) end   -- once per distinct error, not every tick
+    BES.seer.last_err = err
   end
   gs.run.forced_build = BES.forced_id(gs)
   if BES.seen.seed and BES.seen.seed == (gs.meta and gs.meta.seed_hash) then gs.run.seen_jokers = BES.seen.keys end
