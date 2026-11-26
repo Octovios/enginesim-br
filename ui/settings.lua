@@ -12,7 +12,7 @@ local I18N = require("util.i18n")
 
 local S = {}
 S.DEFAULTS = { show_panel = true, show_tags = true, fast_selfplay = true, fast_speed = 16, think_mode = "balanced",
-               language = "pt_BR", skip_policy = "auto", default_build = "auto" }
+               language = "pt_BR", skip_policy = "auto", default_build = "auto", seer_mode = false }
 S.SPEEDS = { 4, 8, 16, 32, 64 }
 -- "While thinking": how much of each frame the engine may use (main.lua BES.slice_budget)
 S.THINK_MODES = { "smooth", "balanced", "fast" }
@@ -130,6 +130,8 @@ function S.tab()
       current_option = index_of(S.SKIP_POLICIES, cfg.skip_policy, 1), opt_callback = "bes_cfg_skip_policy", scale = 0.8, w = 4,
       info = { pt and "Analisar: compara a tag com jogar (recompensa da ficha, loja, juros, coringas que crescem)."
                   or "Analyse: weighs the tag against playing (stake reward, shop, interest, growing jokers)." } }),
+    create_toggle({ label = I18N.say("seer_setting"), ref_table = cfg, ref_value = "seer_mode", w = 4.5,
+      info = { I18N.say("seer_setting_info") } }),
     heading(pt and "Build" or "Build"),
     create_option_cycle({ label = pt and "Build ao começar uma run" or "Build to force at run start", options = bnames,
       current_option = index_of(bids, cfg.default_build, 1), opt_callback = "bes_cfg_default_build", scale = 0.8, w = 5,

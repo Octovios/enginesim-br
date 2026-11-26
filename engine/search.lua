@@ -14,6 +14,7 @@
 local Rng = require("util.rng")
 local HandEval = require("engine.hand_eval")
 local Heuristics = require("engine.heuristics")
+local Seer = require("engine.seer")   -- (EngineSim BR) seer mode: the real draw order
 
 local S = {}
 
@@ -62,7 +63,7 @@ local function step(hand, pile, sel, hs, rng)
   for _, c in ipairs(sel or {}) do played[c] = true end
   local nh = {}
   for _, c in ipairs(hand) do if not played[c] then nh[#nh + 1] = c end end
-  local sp = shuffled(pile, rng)
+  local sp = Seer.order(pile, rng, shuffled)
   while #nh < hs and #sp > 0 do nh[#nh + 1] = table.remove(sp) end
   return nh, sp
 end
@@ -71,7 +72,7 @@ end
 -- still prefer the higher-scoring line when clearing is impossible).
 local function greedy_chips(gs, hand, pile, chips, hands, discards, target, hs, rng)
   local current = copy_list(hand)
-  local draw = shuffled(pile, rng)
+  local draw = Seer.order(pile, rng, shuffled)
   while hands > 0 and #current > 0 do
     if chips >= target then return chips end
     local ev, sel = HandEval.best_play_target(with_hand(gs, current), current, target - chips)

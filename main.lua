@@ -81,6 +81,7 @@ local I18N = try_require("util.i18n")
 local BuildAdvisor = try_require("engine.build_advisor")     -- builds: suggestions, forced build
 local Archetypes = try_require("engine.archetypes")
 local BuildMenu = try_require("ui.build_menu")               -- F3: choose a build to force
+local Seer = try_require("engine.seer")                      -- F4: seer mode (the run's real future)
 
 -- Monte-Carlo sample count per evaluation. Higher = smoother probabilities but
 -- more cost; the signature gate means this only runs when state changes.
@@ -248,10 +249,154 @@ function BES.record_seen(gs)
   end
 end
 
+-- ---- (EngineSim BR) SEER MODE ----------------------------------------------------------------------------------------
+-- engine/seer.lua explains the idea; here the live side: switch, the luck-stream peek, and a self-check that the
+-- draw order really is the game's (after every draw, the cards that arrived must be the ones predicted -- if they
+-- are not, the order is not used and the panel says so).
+BES.seer = { ok = 0, miss = 0, bad = false, check = nil, boss = nil }
+function BES.seer_on()
+  return Settings and Settings.cfg and Settings.cfg.seer_mode and true or false
+end
+function BES.toggle_seer()
+  if not (Settings and Settings.cfg) then return end
+  Settings.cfg.seer_mode = not Settings.cfg.seer_mode
+  if Settings.save then Settings.save() end
+  BES.seer = { ok = 0, miss = 0, bad = false, check = nil, boss = nil }
+  if BES.tracker then BES.tracker.reset() end
+  local now = (love and love.timer and love.timer.getTime and love.timer.getTime()) or 0
+  if Overlay and Overlay.notify and I18N then
+    Overlay.notify(I18N.say(Settings.cfg.seer_mode and "seer_on" or "seer_off"), now, 3)
+  end
+  if Overlay and Overlay.set_seer and not Settings.cfg.seer_mode then Overlay.set_seer(nil) end
+  Log.info("seer mode " .. (Settings.cfg.seer_mode and "ON" or "OFF"))
+end
+
+local function id_set(list)
+  local s = {}
+  for _, c in ipairs(list or {}) do if c.id ~= nil then s[c.id] = true end end
+  return s
+end
+
+-- After each draw: were the cards that arrived the first ones of the predicted order?
+function BES.seer_validate(gs)
+  local S = BES.seer
+  local seed, round = gs.meta and gs.meta.seed_hash, gs.meta and gs.meta.round
+  local hand = id_set(gs.hand)
+  local chk = S.check
+  if chk and chk.seed == seed and chk.round == round then
+    local drawn = {}
+    for id in pairs(hand) do
+      if not chk.hand[id] and chk.deck[id] then drawn[#drawn + 1] = id end   -- came from the deck (not created)
+    end
+    if #drawn > 0 then
+      local expect = {}
+      for i = 1, #drawn do if chk.pred[i] ~= nil then expect[chk.pred[i]] = true end end
+      local all = true
+      for _, id in ipairs(drawn) do if not expect[id] then all = false end end
+      if all then S.ok = S.ok + 1
+      else
+        S.miss = S.miss + 1
+        Log.warn(string.format("seer: the draw did not match the predicted order (%d ok, %d miss)", S.ok, S.miss))
+        if S.miss >= 2 and S.miss > S.ok then S.bad = true end
+      end
+    end
+  end
+  local pred = {}
+  for _, c in ipairs(Seer.next_draws(gs.remaining or {}, 12)) do pred[#pred + 1] = c.id end
+  S.check = { seed = seed, round = round, pred = pred, hand = hand, deck = id_set(gs.remaining) }
+end
+
+-- The "Future" lines of the panel popup.
+function BES.seer_lines(gs)
+  if not (I18N and Seer) then return nil end
+  local S = BES.seer
+  local lines = { I18N.say("seer_title") }
+  if S.bad then lines[#lines + 1] = I18N.say("seer_bad")
+  elseif S.ok > 0 then lines[#lines + 1] = I18N.say("seer_confirmed", S.ok)
+  else lines[#lines + 1] = I18N.say("seer_waiting") end
+  local hs = (gs.run and gs.run.hand_size) or 8
+  local next_cards = (not S.bad) and Seer.next_cards(gs, hs) or nil
+  if next_cards and #next_cards > 0 then
+    local labels = {}
+    for _, c in ipairs(next_cards) do labels[#labels + 1] = Cards and Cards.label(c) or tostring(c.id) end
+    lines[#lines + 1] = I18N.say("seer_next_cards", table.concat(labels, " "))
+  end
+  local function seq(key, den, n, yes, no)
+    local o = Seer.outcomes(gs, key, den, n)
+    if not o or #o == 0 then return nil end
+    local w = {}
+    for i, h in ipairs(o) do w[i] = I18N.say(h and yes or no) end
+    return table.concat(w, ", ")
+  end
+  local function owns(key)
+    for _, j in ipairs(gs.jokers or {}) do if j.key == key then return true end end
+    return false
+  end
+  local function holds(key)
+    for _, c in ipairs(gs.consumables or {}) do if c.key == key then return true end end
+    return false
+  end
+  local enh = {}
+  for _, c in ipairs(gs.deck or {}) do if c.enhancement then enh[c.enhancement] = true end end
+  if enh.m_lucky then
+    local a = seq("lucky_mult", 5, 4, "seer_hit", "seer_miss")
+    if a then lines[#lines + 1] = I18N.say("seer_lucky_mult", a) end
+    local b = seq("lucky_money", 15, 4, "seer_hit", "seer_miss")
+    if b then lines[#lines + 1] = I18N.say("seer_lucky_money", b) end
+  end
+  if enh.m_glass then
+    local g = seq("glass", 4, 4, "seer_breaks", "seer_holds")
+    if g then lines[#lines + 1] = I18N.say("seer_glass", g) end
+  end
+  if holds("c_wheel_of_fortune") then
+    local w = seq("wheel_of_fortune", 4, 1, "seer_hit", "seer_miss")
+    if w then lines[#lines + 1] = I18N.say("seer_wheel", w) end
+  end
+  if owns("j_gros_michel") then
+    local g = seq("gros_michel", 6, 1, "seer_destroyed", "seer_survives")
+    if g then lines[#lines + 1] = I18N.say("seer_gros", g) end
+  end
+  if owns("j_cavendish") then
+    local g = seq("cavendish", 1000, 1, "seer_destroyed", "seer_survives")
+    if g then lines[#lines + 1] = I18N.say("seer_cavendish", g) end
+  end
+  if owns("j_misprint") then
+    local r = gs.seer_rolls and gs.seer_rolls.misprint
+    if type(r) == "table" and #r > 0 then
+      local w = {}
+      for i = 1, math.min(3, #r) do w[i] = "+" .. tostring(r[i]) end
+      lines[#lines + 1] = I18N.say("seer_misprint", table.concat(w, ", "))
+    end
+  end
+  for _, e in ipairs({ { "j_bloodstone", "bloodstone", 2, "seer_bloodstone" }, { "j_business", "business", 2, "seer_business" },
+                       { "j_reserved_parking", "parking", 2, "seer_parking" }, { "j_8_ball", "8ball", 4, "seer_8ball" },
+                       { "j_space", "space", 4, "seer_space" } }) do
+    if owns(e[1]) then
+      local a = seq(e[2], e[3], 4, "seer_hit", "seer_miss")
+      if a then lines[#lines + 1] = I18N.say(e[4], a) end
+    end
+  end
+  if S.boss and S.boss.name then lines[#lines + 1] = I18N.say("seer_next_boss", S.boss.ante or 0, S.boss.name) end
+  return lines
+end
+
 -- Put the player's build choice and the seen-joker history on a snapshot, before any advisor reads it.
 function BES.decorate(gs)
   if not (gs and gs.run) then return gs end
   pcall(BES.record_seen, gs)
+  -- seer mode: the real draw order and the next luck rolls (see engine/seer.lua)
+  if Seer and BES.seer_on() then
+    pcall(BES.seer_validate, gs)
+    if not BES.seer.bad and gs.remaining then Seer.mark(gs.remaining) end
+    local okr, rolls = pcall(Extract.peek_rolls)
+    if okr and rolls then gs.seer_rolls = rolls end
+    local bkey = tostring(gs.meta and gs.meta.seed_hash) .. ":" .. tostring(gs.meta and gs.meta.ante) .. ":"
+      .. tostring(gs.run and gs.run.boss_key)
+    if not (BES.seer.boss and BES.seer.boss_key == bkey) then
+      local okb, nb = pcall(Extract.peek_next_boss)
+      BES.seer.boss, BES.seer.boss_key = okb and nb or nil, bkey
+    end
+  end
   gs.run.forced_build = BES.forced_id(gs)
   if BES.seen.seed and BES.seen.seed == (gs.meta and gs.meta.seed_hash) then gs.run.seen_jokers = BES.seen.keys end
   return gs
@@ -276,6 +421,14 @@ end
 -- The popup's "this run" (stake / deck) and build lines, refreshed on every state change (cheap).
 function BES.panel_info(gs)
   if not (BuildAdvisor and Overlay and gs) then return end
+  if Overlay.set_seer then
+    if Seer and BES.seer_on() then
+      local oks, sl = pcall(BES.seer_lines, gs)
+      Overlay.set_seer(oks and sl or nil)
+    else
+      Overlay.set_seer(nil)
+    end
+  end
   local ok1, ctx = pcall(BuildAdvisor.context_lines, gs)
   if ok1 and Overlay.set_context then Overlay.set_context(ctx) end
   local ok2, bl = pcall(BuildAdvisor.summary_lines, gs)
@@ -1242,6 +1395,7 @@ if _G.G and _G.SMODS then
     local prev = love.keypressed
     function love.keypressed(key, ...)
       if key == "f3" and BuildMenu then pcall(BuildMenu.open) end   -- (EngineSim BR) choose a build to force
+      if key == "f4" then pcall(BES.toggle_seer) end                -- (EngineSim BR) seer mode on / off
       if key == "f7" then Log.info("--- joker ability dump ---"); pcall(BES.dump_jokers) end
       if key == "f8" then Log.info("--- manual evaluation (with sim) ---"); BES.evaluate(true) end
       if key == "f9" then   -- the panel setting (also in the Mods menu); applied next frame

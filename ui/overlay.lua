@@ -273,6 +273,18 @@ function Overlay.set_context(lines)
   end
   if not same then s.context = new; s.version = (s.version or 0) + 1 end
 end
+function Overlay.set_seer(lines)
+  local s = Overlay.state
+  local new = localized(lines)
+  local old = s.seer
+  local same = (old == nil and new == nil)
+  if old and new and #old == #new then
+    same = true
+    for i = 1, #new do if old[i] ~= new[i] then same = false end end
+  end
+  if not same then s.seer = new; s.version = (s.version or 0) + 1 end
+end
+
 function Overlay.set_build(lines)
   local s = Overlay.state
   local new = localized(lines)

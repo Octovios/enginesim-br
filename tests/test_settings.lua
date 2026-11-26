@@ -64,8 +64,8 @@ return function(t)
     local page = mod.config_tab()
     t.ok(page and page.n == 7, "page is a UI root")
     t.eq(table.concat(made, ","), "cycle:2:English,toggle:show_panel,toggle:show_tags,cycle:2:Balanced,"
-      .. "cycle:1:Analyse (recommended),cycle:1:Automatic,toggle:fast_selfplay,cycle:1:x4",
-      "page: language, panel, tags, while-thinking (default Balanced), skip policy, build, fast self-play, speed")
+      .. "cycle:1:Analyse (recommended),toggle:seer_mode,cycle:1:Automatic,toggle:fast_selfplay,cycle:1:x4",
+      "page: language, panel, tags, while-thinking (default Balanced), skip policy, seer mode, build, fast self-play, speed")
     -- (EngineSim BR) the language setting reaches util/i18n; Portuguese labels the page in Portuguese
     local I18N = require("util.i18n")
     S.on_language({ to_key = 1 })

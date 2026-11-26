@@ -20,6 +20,7 @@
 local Flags = require("engine.flags")
 local Cards = require("util.cards")
 local Jokers = require("engine.joker_effects")
+local Seer = require("engine.seer")   -- (EngineSim BR) seer mode: real chance outcomes
 
 local HandEval = {}
 
@@ -418,9 +419,26 @@ end
 -- (cmin/mmin; approx effects are excluded from it), the approx flag, the trigger log and the referee rng. `kind` ..
 -- label(`val`) names the trigger in the log, built only when the effect logs. Module-level, not a closure per call
 -- (LuaJIT cannot compile closure creation; see is_flush). Same arithmetic as apply_effect.
+-- (EngineSim BR) seer mode: the chance effect's REAL outcome, from the next value of its luck stream
+-- (engine/seer; gs.seer_rolls). nil when the prediction ran out: the caller keeps the average.
+local EFF_NONE = {}
+local function seer_effect(kind, v, normal)
+  if kind == "lucky" or kind == "lucky_oops" then return (v < normal / 5) and { mult = 20 } or EFF_NONE end
+  if kind == "misprint" then return { mult = v } end
+  if kind == "bloodstone" then return (v < normal / 2) and { xmult = 1.5 } or EFF_NONE end
+  return nil
+end
+
 local function apply(st, c, m, eff, kind, val)
   local R = st.R
-  if R and eff and eff.roll then eff = roll_effect(eff.roll, R) end   -- referee: sample the chance effect
+  if eff and eff.roll then
+    if R then eff = roll_effect(eff.roll, R)                         -- referee: sample the chance effect
+    elseif st.S then                                                 -- seer: the real outcome, in order
+      local v = st.S(eff.roll)
+      local se = (v ~= nil) and seer_effect(eff.roll, v, st.N) or nil
+      if se then eff = se end
+    end
+  end
   if not eff then return c, m end
   local ec, em, ex = eff.chips, eff.mult, eff.xmult
   if eff.approx then st.approx = true
@@ -576,6 +594,7 @@ function HandEval.score_with(gs, played, effective, mods, pre_ht, pre_scoring, p
   -- apply a hook effect to the running totals (mutates chips/mult and the
   -- guaranteed-floor cmin/mmin; approx effects are excluded from the floor).
   local st = { approx = false, cmin = cmin, mmin = mmin, log = log, R = HandEval.roll_rng }
+  if not st.R and gs.seer_rolls then st.S, st.N = Seer.roller(gs), Seer.normal(gs) end   -- seer mode
   local chip_eff = {}   -- the scored card's own chips (reused: apply only reads it)
 
   -- 2. scoring cards, left -> right. Debuffed cards score nothing -- both the
@@ -605,12 +624,20 @@ function HandEval.score_with(gs, played, effective, mods, pre_ht, pre_scoring, p
         -- retrigger (Hanging Chad) on a money card is worth ordering for.
         if card.seal == "Gold" then money = money + 3 end
         if card.enhancement == "m_lucky" then
+          local sv = (not st.R and st.S) and st.S("lucky_money") or nil
           if st.R then money = money + ((st.R() < (mods.oops and 2 or 1) / 15) and 20 or 0)
+          elseif sv ~= nil then money = money + ((sv < st.N / 15) and 20 or 0)   -- seer: the real roll
           else money = money + (mods.oops and 40 or 20) / 15 end  -- Oops doubles Lucky's 1/15 $ odds
         end
         if business > 0 and (mods.all_faces or Cards.is_face(card)) then
           if st.R then
             for _ = 1, business do if mods.oops or st.R() < 0.5 then money = money + 2 end end
+          elseif st.S then
+            for _ = 1, business do
+              local sv = st.S("business")
+              if sv == nil then money = money + (mods.oops and 2 or 1)
+              elseif sv < st.N / 2 then money = money + 2 end
+            end
           else
             money = money + business * (mods.oops and 2 or 1)   -- $2 at 1/2 (Oops -> 1/1) per Business Card, per trigger
           end

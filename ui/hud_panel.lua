@@ -263,6 +263,8 @@ function Panel.tooltip()
     para(I18N.say("ui_alternatives"), G.C.BLUE)
     for i, a in ipairs(st.alts) do para(i .. ". " .. a, G.C.UI.TEXT_INACTIVE) end
   end
+  -- (EngineSim BR) the seer mode's view of the future
+  for i, l in ipairs(st.seer or {}) do para(l, i == 1 and G.C.PURPLE or G.C.UI.TEXT_INACTIVE) end
   -- the build plan (suggested / forced)
   for i, b in ipairs(st.build or {}) do para(b, i == 1 and G.C.PURPLE or G.C.UI.TEXT_INACTIVE) end
   -- what the stake and deck change in this run

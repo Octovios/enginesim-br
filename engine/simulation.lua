@@ -34,6 +34,7 @@ local Mechanics = require("engine.mechanics")
 local BossEffect = require("engine.boss_effect")
 local DiscardValue = require("engine.discard_value")
 local Farm = require("engine.farm")
+local Seer = require("engine.seer")   -- (EngineSim BR) seer mode: the real draw order
 
 local Sim = {}
 
@@ -138,7 +139,7 @@ local function rollout(gs, start_hand, pile, target, chips0, hands, discards, ha
   end
   local current = {}
   for i = 1, #start_hand do current[i] = start_hand[i] end
-  local draw = shuffled(pile, rng)         -- draw from the end
+  local draw = Seer.order(pile, rng, shuffled)   -- draw from the end (seer mode: the real order)
   local chips = chips0
   local money = 0                          -- in-blind $ farmed FROM HERE forward (gold seal/Lucky/
                                            -- money jokers, retrigger-aware via ev.money). Accumulated
@@ -362,6 +363,7 @@ function Sim.survive_current(gs, samples, rng, yield)
   local target = b.target_chips or 0
   if target <= 0 then return 1 end
   local pile = current_pile(gs)
+  samples = Seer.samples(pile, samples)   -- seer mode: the deal is known, one rollout is exact
   -- current blind's boss: scoring debuffs + play-legality. Resources are LIVE
   -- (the game already set hands_left/discards_left for this boss), so we don't
   -- re-apply BossEffect.resources here.
@@ -398,6 +400,7 @@ function Sim.survive_after(gs, first, samples, rng, milk)
   if target <= 0 then return { frac = 1, clear = 1 } end
   local eff = (b.boss and b.boss_effect_key) and BossEffect.of(b.boss_effect_key) or nil
   local pile = current_pile(gs)
+  samples = Seer.samples(pile, samples)   -- seer mode: one exact rollout
   local hand = gs.hand or {}
   local chips0 = b.chips_scored or 0
   local hands = b.hands_left or 0

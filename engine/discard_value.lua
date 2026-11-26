@@ -11,6 +11,7 @@ local Flags = require("engine.flags")
 local HandEval = require("engine.hand_eval")
 local Cards = require("util.cards")
 local Progress = require("util.progress")   -- the live Thinking bar (inert unless armed)
+local Seer = require("engine.seer")   -- (EngineSim BR) seer mode: the real draw order
 
 local DV = {}
 
@@ -89,6 +90,7 @@ function DV.measured(gs, discard, opts)
   local hand = gs.hand or {}
   local pile = draw_pile(gs)
   if #pile == 0 then return nil end
+  samples = Seer.samples(pile, samples)     -- seer mode: the redraw is known, one sample is exact
 
   local drop = {}
   for _, c in ipairs(discard) do drop[c] = true end
@@ -140,10 +142,14 @@ function DV.measured(gs, discard, opts)
   local filter = opts.filter
   local total = 0
   for _ = 1, samples do
-    local s = shuffled(pile, rng)
+    local s = Seer.order(pile, rng, shuffled)
     local nh = {}
     for i = 1, #keep do nh[i] = keep[i] end
-    for i = 1, math.min(ndraw, #s) do nh[#nh + 1] = s[i] end
+    if Seer.is_known(s) then
+      for _, c in ipairs(Seer.next_draws(s, ndraw)) do nh[#nh + 1] = c end   -- the cards the game will deal
+    else
+      for i = 1, math.min(ndraw, #s) do nh[#nh + 1] = s[i] end
+    end
     local ev
     if filter then ev = HandEval.best_play_target(gs_after, nh, 0, filter)
     else ev = HandEval.best_play(gs_after, nh) end

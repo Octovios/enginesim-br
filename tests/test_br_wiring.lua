@@ -7,7 +7,8 @@
 return function(t)
   local saved = {}
   local SAVED_KEYS = { "G", "SMODS", "love", "localize", "create_toggle", "create_option_cycle",
-    "create_UIBox_generic_options", "create_UIBox_HUD", "UIBox", "lighten", "darken", "Node", "Moveable" }
+    "create_UIBox_generic_options", "create_UIBox_HUD", "UIBox", "lighten", "darken", "Node", "Moveable",
+    "pseudorandom", "get_new_boss" }
   for _, k in ipairs(SAVED_KEYS) do saved[k] = rawget(_G, k) end
   local Log = require("util.log")
   local saved_level = Log.level
@@ -157,6 +158,48 @@ return function(t)
     t.ok(BES.seen.keys.j_trio ~= nil, "wiring: a joker seen in the shop is remembered")
     t.ok(files.enginesim_br_seen ~= nil or files["enginesim_br_seen.json"] ~= nil, "wiring: and saved for a continued run")
     t.ok(BES.last and BES.last.shop, "wiring: the shop was evaluated")
+
+    -- seer mode (F4): the real draw order is used, checked after every draw, and shown on the panel
+    G.STATE = STATES.SELECTING_HAND
+    G.shop_jokers, G.shop_vouchers, G.shop_booster = nil, nil, nil
+    G.GAME.blind = { name = "Small Blind", chips = 300, config = {} }
+    G.GAME.round_resets.blind_states = { Small = "Current", Big = "Upcoming", Boss = "Upcoming" }
+    G.GAME.current_round.hands_left, G.GAME.current_round.discards_left = 4, 3
+    G.GAME.pseudorandom = {}
+    G.GAME.probabilities = { normal = 1 }
+    _G.pseudorandom = function(key, min, max)
+      local pr = G.GAME.pseudorandom
+      pr[key] = ((pr[key] or 0.5) * 1.7 + 0.13) % 1
+      if min and max then return min + math.floor(pr[key] * (max - min + 1)) end
+      return pr[key]
+    end
+    _G.get_new_boss = function() return "bl_hook" end
+    local hand_cards, deck_cards = {}, {}
+    for i, c in ipairs(cards) do if i <= 8 then hand_cards[#hand_cards + 1] = c else deck_cards[#deck_cards + 1] = c end end
+    G.hand.cards, G.deck.cards = hand_cards, deck_cards
+    G.playing_cards = cards
+    love.keypressed("f4")
+    t.ok(BES.seer_on(), "wiring: F4 turns the seer mode on")
+    local function settle()
+      for _ = 1, 4 do T = T + 0.3; love.update(0.3) end
+      for _ = 1, 3000 do if not BES.job then break end; T = T + 0.016; love.update(0.016) end
+    end
+    settle()
+    t.ok(table.concat(Overlay.state.seer or {}, "\n"):find("próximas cartas", 1, true) ~= nil, "wiring: the panel shows the next cards")
+    -- a real draw: two cards leave the hand and the deck's LAST two arrive (the game draws from the end)
+    table.remove(hand_cards, 1); table.remove(hand_cards, 1)
+    hand_cards[#hand_cards + 1] = table.remove(deck_cards); hand_cards[#hand_cards + 1] = table.remove(deck_cards)
+    G.GAME.current_round.discards_left = 2
+    settle()
+    t.eq(BES.seer.ok, 1, "wiring: the draw matched the predicted order")
+    -- two cards from the wrong end of the deck: caught
+    table.remove(hand_cards, 1); table.remove(hand_cards, 1)
+    hand_cards[#hand_cards + 1] = table.remove(deck_cards, 1); hand_cards[#hand_cards + 1] = table.remove(deck_cards, 1)
+    G.GAME.current_round.discards_left = 1
+    settle()
+    t.eq(BES.seer.miss, 1, "wiring: a draw that does not match the order is caught")
+    love.keypressed("f4")
+    t.ok(not BES.seer_on(), "wiring: F4 turns it off again")
   end)
   t.ok(ok, "EngineSim BR wiring smoke test ran without error: " .. tostring(err))
   for _, k in ipairs(SAVED_KEYS) do _G[k] = saved[k] end   -- every key, so a global that was nil is cleared again

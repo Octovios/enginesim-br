@@ -477,6 +477,67 @@ function Extract.register_names(I18N)
   return n
 end
 
+-- ---- (EngineSim BR) SEER MODE: peeking at the run's future ---------------------------------------------------------
+-- Every chance check in Balatro reads a NAMED stream: pseudorandom('lucky_mult') advances only
+-- G.GAME.pseudorandom['lucky_mult'] (pseudoseed steps that one number) and then seeds math.random with it. So the
+-- next values of a stream can be read by calling the game's own pseudorandom() a few times and putting the stream's
+-- number back: the game will produce exactly those values, in that order, when it next checks. A stream the game has
+-- not used yet is nil; restoring nil lets the game create it from the seed later, identically.
+-- (math.random's own state is re-seeded on every game call, so re-seeding it here changes nothing the game uses.)
+Extract.SEER_STREAMS = {
+  { key = "lucky_mult", n = 8 },  { key = "lucky_money", n = 8 },
+  { key = "misprint", n = 4, min = 0, max = 23 },
+  { key = "bloodstone", n = 8 }, { key = "business", n = 8 }, { key = "parking", n = 8 },
+  { key = "glass", n = 6 },       { key = "wheel_of_fortune", n = 3 },
+  { key = "gros_michel", n = 2 }, { key = "cavendish", n = 2 },
+  { key = "8ball", n = 4 },       { key = "space", n = 4 },
+}
+function Extract.peek_rolls(streams)
+  local G = _G.G
+  if not (G and G.GAME and type(G.GAME.pseudorandom) == "table" and type(_G.pseudorandom) == "function") then return nil end
+  local pr = G.GAME.pseudorandom
+  local out = { normal = (G.GAME.probabilities and G.GAME.probabilities.normal) or 1 }
+  for _, st in ipairs(streams or Extract.SEER_STREAMS) do
+    local saved = pr[st.key]
+    local vals = {}
+    local ok = pcall(function()
+      for i = 1, st.n do vals[i] = _G.pseudorandom(st.key, st.min, st.max) end
+    end)
+    pr[st.key] = saved                     -- put the stream back exactly where it was
+    if ok then out[st.key] = vals end
+  end
+  return out
+end
+
+-- The NEXT ante's boss (experimental): the game's own get_new_boss() as it will run when this ante's boss falls --
+-- with the ante set one higher -- then every bit of state it touches is put back (the 'boss' stream, the
+-- bosses-used counts, a prescribed boss, the ante). A Boss Tag / Director's Cut reroll in between changes it.
+function Extract.peek_next_boss()
+  local G = _G.G
+  if not (G and G.GAME and G.GAME.round_resets and type(_G.get_new_boss) == "function") then return nil end
+  local GAME = G.GAME
+  local rr = GAME.round_resets
+  local ante = rr.ante
+  local pr = GAME.pseudorandom or {}
+  local saved_boss = pr.boss
+  local used = {}
+  for k, v in pairs(GAME.bosses_used or {}) do used[k] = v end
+  local presc = GAME.perscribed_bosses and GAME.perscribed_bosses[(ante or 0) + 1]
+  local key
+  local ok = pcall(function()
+    rr.ante = (ante or 0) + 1
+    key = _G.get_new_boss()
+  end)
+  rr.ante = ante                                           -- restore everything, success or not
+  pr.boss = saved_boss
+  if GAME.bosses_used then
+    for k in pairs(GAME.bosses_used) do GAME.bosses_used[k] = used[k] end
+  end
+  if GAME.perscribed_bosses then GAME.perscribed_bosses[(ante or 0) + 1] = presc end
+  if not ok or type(key) ~= "string" then return nil end
+  return { key = key, name = loc_name("Blind", key, G.P_BLINDS and G.P_BLINDS[key] and G.P_BLINDS[key].name), ante = (ante or 0) + 1 }
+end
+
 -- Is a run on screen (not the main menu)?
 function Extract.in_run()
   local G = _G.G

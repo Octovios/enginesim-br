@@ -84,6 +84,7 @@ local suites = {
   "tests.test_settings",
   "tests.test_loader",
   "tests.test_br",          -- EngineSim BR additions
+  "tests.test_seer",        -- EngineSim BR: seer mode (real draw order, real luck rolls)
   "tests.test_br_wiring",   -- EngineSim BR: main.lua's in-game wiring against a stand-in game
 }
 -- NOTE: the Phase-1 simulator integration suites (tests.test_world, tests.test_driver)

@@ -22,6 +22,7 @@ com o seu baralho real (Monte-Carlo) e compara as opções — o mesmo princípi
 | **A Morte (Death)** | Diz **qual carta vira qual** e, se a ordem na mão estiver errada, manda **arrastar a carta para a ESQUERDA** antes de usar. As tags nas cartas mostram `1 VIRA` / `2 MODELO` e `<< ARRASTE` em vermelho. |
 | **Builds** | 23 builds catalogadas (flush por naipe, sequência, pares, full house, quadra, quina, realeza, Reis de Aço/Baron+Mime, Fibonacci, números pares, Hack, Sorte, Vidro, Pedra, Dinheiro, Descartes, Planetas, Repetições, Carta Alta). Cada uma é avaliada pelo **seu baralho**, pelos coringas que você tem, pelos que **estão na loja agora** e pelos que **já apareceram na loja nesta run**. O painel mostra as 3 melhores com o que você já tem e o que procurar. |
 | **Forçar build (F3)** | Escolha uma build para forçar (no início ou no meio da run). O motor passa a **puxar compras, vendas, pacotes, planetas e tarôs** para ela: peças principais ganham prioridade e não são vendidas, a Morte/Força/Enforcado miram o naipe/valor da build, os tarôs certos (ex.: O Carro / The Chariot, que cria cartas de Aço, para Reis de Aço) sobem de valor. Dá para deixar uma build padrão para toda run nova nas configurações. |
+| **Modo vidente (F4)** | Opcional, desligado por padrão. Usa a **ordem real do baralho** (sabe exatamente quais cartas vêm em cada descarte) e as **próximas rolagens de sorte** (cartas da Sorte, Misprint, Bloodstone, Vidro, Wheel of Fortune, Gros Michel…), e mostra o próximo chefe. Confere sozinho se a previsão bate com o jogo. Como funciona, passo a passo: [`docs/MODO_VIDENTE.md`](docs/MODO_VIDENTE.md). |
 | **Ordem dos coringas** | Calcula a melhor ordem dos coringas sobre várias mãos típicas do seu baralho (quem soma Fichas/Mult antes, quem multiplica depois, copiadores no lugar certo) e mostra na escolha do blind e na loja, com números em cima dos coringas. O autoplay arruma sozinho. Na jogada, reordena mesmo quando a mão já vence (vale para as próximas mãos). |
 | **Observatório** | O voucher Observatório agora é calculado (x1.5 por planeta guardado da mão jogada) e o motor para de mandar usar esses planetas. |
 | **Perkeo** | Cópias Negativas de consumíveis passaram a ser lidas do jogo. |
@@ -29,6 +30,9 @@ com o seu baralho real (Monte-Carlo) e compara as opções — o mesmo princípi
 
 ## Novidades
 
+- **0.8.0** — **modo vidente** (F4): ordem real do baralho nas decisões de jogar/descartar, sorte prevista
+  (Lucky, Misprint, Bloodstone, Vidro, Wheel of Fortune…), próximo chefe, autoconferência e um guia de como o
+  sorteio do Balatro funciona ([`docs/MODO_VIDENTE.md`](docs/MODO_VIDENTE.md)).
 - **0.7.2** — ordem permanente dos coringas (somar antes, multiplicar depois), sugerida na escolha do blind e na loja
   e aplicada pelo autoplay; na jogada, os coringas são reordenados mesmo quando a mão já vence.
 - **0.7.1** — coringa **Negativo** não precisa de vaga: o motor não manda mais vender um coringa para comprá-lo
@@ -55,6 +59,7 @@ com o seu baralho real (Monte-Carlo) e compara as opções — o mesmo princípi
 | Tecla | Ação |
 |---|---|
 | **F3** | Menu de builds: escolher uma build para forçar (fora da run: define a build padrão) |
+| **F4** | Liga / desliga o modo vidente (vê o futuro da run) |
 | **F9** | Mostrar / esconder o painel |
 | **F11** | Autoplay: o motor joga sozinho |
 | **F6** | Reinício automático da run (com o autoplay) |
