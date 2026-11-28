@@ -441,6 +441,7 @@ function P.known_value(gs, pk, opts)
   local Progress = require("util.progress")
   local view = {}
   for key, v in pairs(gs) do view[key] = v end
+  view.seer_pack_inner = true                       -- no known-pack valuation inside this one (engine/seer Seer.inner)
   local copies = {}
   for i, it in ipairs(items) do
     local c = {}
@@ -467,7 +468,7 @@ end
 -- value(gs, pk, opts) -> value(fraction of a boss hand), note
 function P.value(gs, pk, opts)
   opts = opts or {}
-  if pk and pk.seer then
+  if pk and pk.seer and not (gs and gs.seer_pack_inner) then
     local v, _, names = P.known_value(gs, pk, opts)
     if v then
       return v, (#names > 0) and I18N.say("seer_pack_pick", table.concat(names, ", ")) or I18N.say("seer_pack_skip"), true

@@ -731,11 +731,15 @@ end
 -- puts it on gs.seer_created[key]). Valued like a pack pick of that very joker (+ its edition), instead of the
 -- average of its pool. nil when there is no prediction.
 function CV.seer_joker_frac(gs, key, need, rng)
-  local it = gs and gs.seer_created and gs.seer_created[key]
+  if not gs or gs.seer_inner then return nil end      -- inside a seer valuation already: the average, no loop
+  local it = gs.seer_created and gs.seer_created[key]
   if not (type(it) == "table" and it.joker) then return nil end
   local JokerWorth = require("engine.joker_worth")     -- lazy: joker_worth reaches this module through its requires
   local Eval = require("engine.eval_function")
-  local v = JokerWorth.of(gs, it.joker, "pick", { need = need or Mechanics.boss_per_hand_need(gs), samples = 6, rng = rng })
+  -- measured on the INNER view (engine/seer Seer.inner): the joker's own worth must not come back through this card
+  -- (Judgement -> 8 Ball -> a random Tarot -> Judgement -> ...)
+  local inner = require("engine.seer").inner(gs)
+  local v = JokerWorth.of(inner, it.joker, "pick", { need = need or Mechanics.boss_per_hand_need(gs), samples = 6, rng = rng })
   v = v + ((it.edition == "negative") and Eval.negative_slot_fv(gs) or Eval.edition_score_bonus(it.edition, false))
   return math.max(0, v), it
 end

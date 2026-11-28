@@ -209,13 +209,14 @@ function Tags.known_value(gs, seer, opts)
     return VU.frac_to_dollars(gs, math.max(0, frac))
   elseif seer.kind == "jokers" then
     local JokerWorth = require("engine.joker_worth")
+    local inner = require("engine.seer").inner(gs)     -- measured without the predictions (no loop through them)
     local slots = (gs.run and gs.run.joker_slots) or 5
     local free = slots - #(gs.jokers or {})
     local total = 0
     for i, it in ipairs(seer.items) do
       local neg = it.edition == "negative"
       if it.joker and (neg or i <= free) then
-        local f = JokerWorth.of(gs, it.joker, "pick", { need = need(gs), samples = 6, rng = opts and opts.rng, cache = opts and opts.cache })
+        local f = JokerWorth.of(inner, it.joker, "pick", { need = need(gs), samples = 6, rng = opts and opts.rng, cache = opts and opts.cache })
         f = f + (neg and Eval.negative_slot_fv(gs) or Eval.edition_score_bonus(it.edition, false))
         total = total + math.max(0, f)
       end

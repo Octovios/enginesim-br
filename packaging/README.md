@@ -30,6 +30,9 @@ com o seu baralho real (Monte-Carlo) e compara as opções — o mesmo princípi
 
 ## Novidades
 
+- **0.9.1** — correção: com o modo vidente ligado, o conselheiro da loja podia travar com "stack overflow" quando
+  o Julgamento previsto criaria a Bola 8 (a Bola 8 vale pelos tarôs que cria, e o Julgamento é um deles — a conta
+  voltava para si mesma). Agora uma previsão é usada em um nível só; lá dentro vale a média normal.
 - **0.9.0** — o modo vidente passa a ver **dentro dos pacotes** (antes de comprar e o da tag de pular), **os próximos
   rerolls da loja**, **a próxima loja**, **a mão inicial da próxima rodada** e **o coringa que A Alma / Julgamento /
   Espectro vão criar**. O motor usa isso: um pacote vale exatamente o que você pegaria dele, o reroll vale o coringa

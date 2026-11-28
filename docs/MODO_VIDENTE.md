@@ -141,7 +141,17 @@ o planeta da sua mão mais jogada) e a edição/selo/aprimoramento das cartas do
 - A tag vale o que entrega (`engine/tags.lua` → `Tags.known_value`), e A Alma/Julgamento/Espectro valem o coringa que
   criam (`engine/consumable_value.lua` → `CV.seer_joker_frac`).
 
-### 4.5 A autoconferência
+### 4.5 Uma previsão não pode alimentar a si mesma
+
+Um erro real que apareceu no jogo e ensina bastante: o Julgamento vale o coringa que vai criar. Se esse coringa é a
+Bola 8, ela vale pelos tarôs aleatórios que cria — e a média dos tarôs inclui o Julgamento, que com a previsão vale a
+Bola 8 de novo... uma conta sem fim, e o Lua desiste com `stack overflow`. A correção (`Seer.inner` em
+`engine/seer.lua`): o coringa criado é avaliado numa **cópia do estado sem as previsões**. Lá dentro o Julgamento
+volta a valer a média, e a conta termina depois de um nível. A cópia leva duas marcas (`seer_inner`,
+`seer_pack_inner`) que passam junto quando o motor copia o estado, então funciona sem nenhuma variável global — o que
+importa porque o motor roda fatiado numa corrotina.
+
+### 4.6 A autoconferência
 
 `BES.seer_check_shop` (em `main.lua`) guarda cada previsão e compara quando a coisa acontece: o pacote que abriu
 (o Steamodded guarda qual foi em `SMODS.OPENED_BOOSTER`), a prateleira depois de um reroll (o contador de rerolls da

@@ -315,6 +315,20 @@ return function(t)
     local v, _, note = CV.card_value(g, "Spectral", "c_soul", nil, need, Rng.fixed())
     t.ok(type(v) == "number" and type(note) == "string" and note:find("Perkeo", 1, true) ~= nil,
       "seer creates value: ... and the note names it")
+    -- a created joker whose worth comes back through the creating card must not loop (live 2026-11-28: Judgement
+    -- would make 8 Ball, 8 Ball is worth the random Tarots it makes, Judgement is one of them -> "stack overflow")
+    local ball = joker_item("j_8_ball", "8 Ball", 5)
+    ball.joker.ability = { extra = 4 }
+    g.seer_created = { c_judgement = ball }
+    local okj, vj, _, nj = pcall(CV.card_value, g, "Tarot", "c_judgement", nil, need, Rng.fixed())
+    t.ok(okj and type(vj) == "number", "seer creates value: Judgement -> 8 Ball -> Tarots -> Judgement does not loop ("
+      .. tostring(okj and "" or vj):sub(1, 80) .. ")")
+    t.ok(okj and type(nj) == "string" and nj:find("8 Ball", 1, true) ~= nil, "seer creates value: ... and still uses the prediction")
+    t.ok(pcall(Packs.mean_random, g, "Tarot", { rng = Rng.fixed() }), "seer creates value: ... nor does the average Tarot")
+    local inner = require("engine.seer").inner(g)
+    t.ok(inner.seer_inner and inner.seer_created == nil and inner.deck == g.deck, "seer inner view: no predictions, same state")
+    t.eq(require("engine.seer").inner(g), inner, "seer inner view: one per state (the engine's caches keep working)")
+    t.eq(CV.seer_joker_frac(inner, "c_judgement", need, Rng.fixed()), nil, "seer inner view: no prediction used inside")
   end
 
   do

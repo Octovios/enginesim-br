@@ -96,6 +96,26 @@ function Seer.normal(gs)
   return (type(r) == "table" and tonumber(r.normal)) or 1
 end
 
+-- ---- using a prediction ONCE ------------------------------------------------------------------------------------
+-- A prediction must not feed its own valuation. Judgement is worth the joker it will create; if that joker is 8 Ball,
+-- 8 Ball is worth the random Tarots it makes, and the average Tarot includes Judgement -- which, with the prediction,
+-- is worth 8 Ball again... (live 2026-11-28: "stack overflow" in the shop after taking Hallucination). So the joker a
+-- card creates is measured on an INNER view of the state, without the predictions: there Judgement falls back to the
+-- average joker and the loop ends after one level. Two flags ride on the view (they survive the engine's shallow copies):
+--   seer_inner      -- no created-joker prediction here (engine/consumable_value CV.seer_joker_frac)
+--   seer_pack_inner -- no known-pack valuation here (engine/packs P.value; set by P.known_value's own view)
+-- The view is memoised per state, so the engine's per-state caches still work inside it.
+local INNER = setmetatable({}, { __mode = "k" })
+function Seer.inner(gs)
+  local v = INNER[gs]
+  if v then return v end
+  v = {}
+  for k, x in pairs(gs) do v[k] = x end
+  v.seer_inner, v.seer_pack_inner, v.seer_created = true, true, nil
+  INNER[gs] = v
+  return v
+end
+
 -- ---- what the panel shows -------------------------------------------------------------------------------------
 -- The next `n` cards you will draw, next first.
 function Seer.next_cards(gs, n)
